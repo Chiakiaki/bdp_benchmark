@@ -48,3 +48,16 @@ def test_tracker_retains_reference_until_replaced_and_resets_pid_state() -> None
 
     tracker.reset()
     assert tracker.reference is None
+
+
+def test_tracker_preview_target_matches_step_target_without_mutating_pid_state() -> None:
+    tracker = TrajectoryPIDTracker(TrackerConfig(lookahead_points=2))
+    reference = _trajectory(y=1.0)
+    ego = EgoState(x=0.0, y=0.0, heading=0.0, speed=5.0)
+    tracker.set_reference(reference)
+
+    preview = tracker.preview_target(ego)
+    assert preview is not None
+    assert tracker._steering_pid.previous_error is None
+    tracker.step(ego, dt=0.1)
+    np.testing.assert_allclose(tracker.last_target_point, preview)

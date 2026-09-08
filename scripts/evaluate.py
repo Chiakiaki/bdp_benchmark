@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convenience entry point for deterministic benchmark evaluation."""
+"""Convenience entry point for benchmark evaluation and visual checks."""
 
 from __future__ import annotations
 

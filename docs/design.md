@@ -191,3 +191,22 @@ the upstream environment and benchmark wrapper and compare observations,
 rewards, and termination flags. Simulator smoke tests reset and step all policy
 representations. Tiny PPO runs validate built-in, one-hot BDP, and Frenet BDP
 training paths.
+
+## Visual Check
+
+The optional `--visual_check` path is evaluation-only. It forces one dummy
+environment, uses deterministic categorical selection by default, and can be
+switched to stochastic selection with `--inference_mode stochastic`. It calls
+the critic-based inference helper once per decision, stores the exact candidate
+payload, updates a simulator-native overlay, renders, and only then steps the
+environment.
+
+HighwayEnv draws lines through its existing pygame `EnvViewer` callback. MetaDrive
+uses its existing Panda3D world line and point drawers. Overlay nodes are cleared
+before reset so they cannot interfere with MetaDrive's world cleanup.
+
+Score colors are current-candidate relative: low red, median neutral, high blue;
+the selected row is overridden to green. For Frenet-PID, the waypoint marker is
+the tracker's pure nearest-plus-lookahead preview and therefore matches the
+target used when the action is stepped. No visual score forward pass is added to
+training.

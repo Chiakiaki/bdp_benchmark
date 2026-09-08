@@ -57,6 +57,7 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
         self.adapter = MetaDriveAdapter(self.env, generation_config)
         self.tracker_config = tracker_config
         self._latest_candidates: CandidateSet | None = None
+        self._visualizer = None
 
     def _pid_policy(self) -> MetaDriveFrenetPIDPolicy:
         policy = self.env.engine.get_policy(self.env.agent.name)
@@ -66,6 +67,8 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
 
     def reset(self, **kwargs):
         self._latest_candidates = None
+        if self._visualizer is not None:
+            self._visualizer.clear()
         options = kwargs.pop("options", None)
         if options:
             raise ValueError("This MetaDrive version does not support non-empty Gymnasium reset options")
@@ -76,11 +79,35 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
         result = self.env.reset(**kwargs)
         if self.execution_mode == "frenet_pid":
             self._pid_policy().configure_tracker(self.tracker_config)
+        if self._visualizer is not None:
+            self._visualizer.install()
         return result
 
     def build_candidate_set(self) -> CandidateSet:
         self._latest_candidates = self.adapter.build_candidate_set(self.execution_mode)
         return self._latest_candidates
+
+    def get_visual_candidate_set(self) -> CandidateSet:
+        return self._latest_candidates or self.build_candidate_set()
+
+    def preview_pid_target(self, candidate_index: int):
+        if self.execution_mode != "frenet_pid":
+            return None
+        candidates = self.get_visual_candidate_set()
+        policy = self._pid_policy()
+        policy.set_reference(candidates.trajectories[int(candidate_index)])
+        return policy.tracker.preview_target(self.adapter.ego_state())
+
+    def set_visual_overlay(self, overlay) -> None:
+        self._visual_overlay = overlay
+        if self._visualizer is not None:
+            self._visualizer.set_overlay(overlay)
+
+    def enable_visualization(self) -> None:
+        from .visualizer import MetaDriveVisualizer
+
+        if self._visualizer is None:
+            self._visualizer = MetaDriveVisualizer(self)
 
     def step(self, action):
         action_idx = int(action)
@@ -91,3 +118,8 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
             self._pid_policy().set_reference(candidate_set.trajectories[action_idx])
         self._latest_candidates = None
         return self.env.step(action_idx)
+
+    def close(self):
+        if self._visualizer is not None:
+            self._visualizer.close()
+        return self.env.close()

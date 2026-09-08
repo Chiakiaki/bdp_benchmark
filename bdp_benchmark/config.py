@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -34,6 +35,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--config", type=str, default=None, help="Benchmark job YAML.")
     parser.add_argument("--run_mode", choices=("train", "evaluate"), default="train")
+    parser.add_argument("--visual_check", action="store_true", default=False)
+    parser.add_argument(
+        "--inference_mode",
+        choices=("deterministic", "stochastic"),
+        default="deterministic",
+        help="Action selection used by evaluation and visual check.",
+    )
     parser.add_argument("--run_name", type=str, default=None)
     parser.add_argument("--resume_model_path", type=str, default=None)
     parser.add_argument("--simulator", choices=("highway", "metadrive"), default="highway")
@@ -136,13 +144,44 @@ def parse_args(argv: Sequence[str] | None = None, *, validate: bool = True) -> a
             raise FileNotFoundError(f"Benchmark config does not exist: {config_path}")
         _load_yaml_defaults(parser, config_path)
         parser.set_defaults(config=str(config_path))
+    argv_list = list(argv) if argv is not None else list(sys.argv[1:])
+    if "--visual_check" in argv_list:
+        defaults: dict[str, Any] = {}
+        if not _option_in_args(argv_list, "--run_mode"):
+            defaults["run_mode"] = "evaluate"
+        if not _option_in_args(argv_list, "--n_envs"):
+            defaults["n_envs"] = 1
+        if not _option_in_args(argv_list, "--vec_env"):
+            defaults["vec_env"] = "dummy"
+        if not _option_in_args(argv_list, "--render_mode"):
+            defaults["render_mode"] = "human"
+        if not _option_in_args(argv_list, "--inference_mode"):
+            defaults["inference_mode"] = "deterministic"
+        parser.set_defaults(**defaults)
     args = parser.parse_args(argv)
     args.num_timesteps = int(args.num_timesteps)
     args.environment_config = dict(args.environment_config or {})
     args.dwb_stop_candidate_index = -1
     if args.simulator == "metadrive" and args.env_id == "highway-fast-v0":
         args.env_id = "MetaDrive-v0"
+    if args.visual_check and args.simulator == "metadrive" and not _option_in_args(argv_list, "--environment_config"):
+        args.environment_config["use_render"] = True
+    if args.visual_check:
+        if not _option_in_args(argv_list, "--run_mode") and args.run_mode == "train":
+            args.run_mode = "evaluate"
+        if not _option_in_args(argv_list, "--n_envs"):
+            args.n_envs = 1
+        if not _option_in_args(argv_list, "--vec_env"):
+            args.vec_env = "dummy"
+        if not _option_in_args(argv_list, "--render_mode") and args.render_mode is None:
+            args.render_mode = "human"
+        if not _option_in_args(argv_list, "--inference_mode"):
+            args.inference_mode = "deterministic"
     return validate_args(args) if validate else args
+
+
+def _option_in_args(args: Sequence[str], option: str) -> bool:
+    return any(value == option or value.startswith(f"{option}=") for value in args)
 
 
 def resolved_config(args: argparse.Namespace) -> dict[str, Any]:
@@ -150,6 +189,8 @@ def resolved_config(args: argparse.Namespace) -> dict[str, Any]:
         "runtime": {
             "run_mode": args.run_mode,
             "run_name": args.run_name,
+            "visual_check": args.visual_check,
+            "inference_mode": args.inference_mode,
         },
         "environment": {
             "simulator": args.simulator,

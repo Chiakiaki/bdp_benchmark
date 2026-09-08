@@ -1,0 +1,30 @@
+runtime:
+  run_mode: evaluate
+  visual_check: true
+  inference_mode: deterministic
+environment:
+  simulator: metadrive
+  env_id: MetaDrive-v0
+  trajectory_execution_mode: native_controller
+  environment_config:
+    use_render: true
+    map: 3
+    traffic_density: 0.1
+    num_scenarios: 1000
+    start_seed: 0
+    horizon: 1000
+algorithm:
+  name: PPO
+  n_envs: 1
+  vec_env: dummy
+  device: auto
+model_architecture:
+  policy_mode: bdp
+  builtin_policy: MlpPolicy
+  candidate_sampler: native_action_frenet
+  candidate_scorer: dot
+evaluation:
+  evaluate_episodes: 1
+  model_path: null
+logging:
+  monitor_mode: none

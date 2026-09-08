@@ -80,6 +80,8 @@ def make_single_env(args, *, monitor_path: Path | None = None, rank: int = 0):
     should_render = bool(getattr(args, "render_train", False)) or args.run_mode == "evaluate" or bool(args.play_mode)
     render_mode = args.render_mode if should_render else None
     raw_env = make_raw_benchmark_env(args, render_mode=render_mode)
+    if bool(getattr(args, "visual_check", False)):
+        raw_env.enable_visualization()
     if args.policy_mode == "builtin":
         env = raw_env
     else:

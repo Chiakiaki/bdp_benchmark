@@ -83,7 +83,39 @@ def test_resolved_config_is_yaml_serializable() -> None:
 
 def test_all_reproducible_job_configs_parse() -> None:
     jobs = sorted((Path(__file__).resolve().parents[1] / "scripts" / "job_scripts").glob("*.yaml"))
-    assert len(jobs) == 12
+    assert len(jobs) >= 12
     for job in jobs:
         args = parse_args(["--config", str(job)])
         assert args.num_timesteps > 0, job.name
+    assert (jobs[0].parent / "visual_check_highway_bdp.yaml").exists()
+    assert (jobs[0].parent / "visual_check_metadrive_bdp.yaml").exists()
+
+
+def test_visual_check_sets_single_rendered_deterministic_evaluation_defaults() -> None:
+    args = parse_args(["--simulator", "highway", "--visual_check"], validate=True)
+
+    assert args.visual_check is True
+    assert args.run_mode == "evaluate"
+    assert args.n_envs == 1
+    assert args.vec_env == "dummy"
+    assert args.render_mode == "human"
+    assert args.inference_mode == "deterministic"
+
+
+def test_visual_check_preserves_explicit_stochastic_mode() -> None:
+    args = parse_args(
+        ["--simulator", "highway", "--visual_check", "--inference_mode", "stochastic"],
+        validate=True,
+    )
+
+    assert args.inference_mode == "stochastic"
+
+
+def test_visual_check_job_config_also_enables_human_evaluation_defaults() -> None:
+    job = Path(__file__).resolve().parents[1] / "scripts" / "job_scripts" / "visual_check_highway_bdp.yaml"
+    args = parse_args(["--config", str(job)])
+
+    assert args.visual_check is True
+    assert args.run_mode == "evaluate"
+    assert args.render_mode == "human"
+    assert args.n_envs == 1

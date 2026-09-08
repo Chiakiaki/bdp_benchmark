@@ -13,9 +13,11 @@ import yaml
 
 from critic_based_rl.model import get_algorithm_class
 from critic_based_rl.runner_core import train_sb3_model
+from critic_based_rl.inference import predict_discrete_with_scores
 
 from .config import resolved_config
 from .env_factory import make_vector_env
+from .visualization import make_overlay
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -92,6 +94,8 @@ def run_training(args) -> Path:
 def run_evaluation(args) -> list[float]:
     if not args.model_path:
         raise ValueError("--model_path is required for evaluation")
+    if bool(getattr(args, "visual_check", False)):
+        return run_visual_check(args)
     log_dir = Path(args.log_path).expanduser() if args.log_path else PROJECT_ROOT / "evaluation"
     log_dir.mkdir(parents=True, exist_ok=True)
     env = make_vector_env(args, log_dir=log_dir, is_train=False)
@@ -101,7 +105,7 @@ def run_evaluation(args) -> list[float]:
     obs = env.reset()
     try:
         while len(returns) < int(args.evaluate_episodes):
-            action, _ = model.predict(obs, deterministic=True)
+            action, _ = model.predict(obs, deterministic=args.inference_mode == "deterministic")
             obs, rewards, dones, _ = env.step(action)
             running_return += rewards
             for env_idx, done in enumerate(dones):
@@ -113,4 +117,79 @@ def run_evaluation(args) -> list[float]:
     finally:
         env.close()
     print(f"episodes={len(returns)} mean_return={np.mean(returns):.6f} std_return={np.std(returns):.6f}")
+    return returns
+
+
+def _unwrap_visual_env(vector_env):
+    """Find the benchmark sidecar below DummyVecEnv/Monitor/BDP wrappers."""
+    if not hasattr(vector_env, "envs") or len(vector_env.envs) != 1:
+        raise ValueError("visual_check requires exactly one DummyVecEnv environment")
+    current = vector_env.envs[0]
+    while current is not None and not hasattr(current, "get_visual_candidate_set"):
+        current = getattr(current, "env", None)
+    if current is None:
+        raise RuntimeError("Could not find a benchmark visual environment below the vector wrapper")
+    return current
+
+
+def _candidate_features_for_observation(args, candidate_set, observation) -> np.ndarray:
+    """Validate that the visible candidate geometry matches the policy input contract."""
+    if getattr(args, "policy_mode", "builtin") != "bdp":
+        return np.asarray(candidate_set.features, dtype=np.float32)
+    if not isinstance(observation, dict) or "candidates" not in observation:
+        raise RuntimeError("BDP visual check expected a Dict observation with candidates")
+    observed = np.asarray(observation["candidates"])[0]
+    candidate_count = int(candidate_set.labels.shape[0])
+    observed = observed[:candidate_count]
+    if str(args.candidate_sampler) in ("frenet", "native_action_frenet"):
+        expected = np.asarray(candidate_set.features, dtype=np.float32)
+    else:
+        expected = np.eye(candidate_count, dtype=np.float32)
+    if observed.shape != expected.shape or not np.allclose(observed, expected, atol=1.0e-5):
+        raise RuntimeError(
+            "Visual candidate payload does not match the candidate features supplied to the policy: "
+            f"observed={observed.shape}, expected={expected.shape}."
+        )
+    return expected
+
+
+def run_visual_check(args) -> list[float]:
+    """Run one-environment native rendering with candidate score overlays."""
+    log_dir = Path(args.log_path).expanduser() if args.log_path else PROJECT_ROOT / "visual_check"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    env = make_vector_env(args, log_dir=log_dir, is_train=False)
+    model = get_algorithm_class(args.sb3_algorithm).load(args.model_path, env=env, device=args.device)
+    benchmark_env = _unwrap_visual_env(env)
+    returns: list[float] = []
+    running_return = np.zeros(env.num_envs, dtype=np.float64)
+    obs = env.reset()
+    deterministic = args.inference_mode == "deterministic"
+    try:
+        while len(returns) < int(args.evaluate_episodes):
+            candidate_set = benchmark_env.get_visual_candidate_set()
+            features = _candidate_features_for_observation(args, candidate_set, obs)
+            actions, scores = predict_discrete_with_scores(model, obs, deterministic=deterministic)
+            selected = int(np.asarray(actions).reshape(-1)[0])
+            pid_target = benchmark_env.preview_pid_target(selected)
+            overlay = make_overlay(
+                labels=np.asarray(candidate_set.labels),
+                features=features,
+                trajectories=np.asarray(candidate_set.trajectories),
+                scores=np.asarray(scores)[0],
+                selected_index=selected,
+                pid_target_xy=pid_target,
+            )
+            benchmark_env.set_visual_overlay(overlay)
+            benchmark_env.render()
+            obs, rewards, dones, _infos = env.step(actions)
+            running_return += rewards
+            for env_idx, done in enumerate(dones):
+                if done:
+                    returns.append(float(running_return[env_idx]))
+                    running_return[env_idx] = 0.0
+                    if len(returns) >= int(args.evaluate_episodes):
+                        break
+    finally:
+        env.close()
+    print(f"visual episodes={len(returns)} mean_return={np.mean(returns):.6f} std_return={np.std(returns):.6f}")
     return returns

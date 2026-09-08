@@ -150,6 +150,49 @@ Add `--render_mode human` for an interactive visual evaluation. MetaDrive must
 use `vec_env: subproc` whenever `n_envs > 1`, because its engine is process
 global.
 
+## Visual Check
+
+`--visual_check` enables the native simulator renderer and overlays the current
+candidate set. It forces one environment and dummy vectorization, and defaults
+to deterministic selection. Use `--inference_mode stochastic` to inspect
+sampled actions instead.
+
+HighwayEnv example:
+
+```bash
+SDL_VIDEODRIVER=x11 python3 scripts/evaluate.py \
+  --config scripts/job_scripts/visual_check_highway_bdp.yaml \
+  --visual_check \
+  --model_path /path/to/PPO_BDP_final_model.zip
+```
+
+MetaDrive example:
+
+```bash
+python3 scripts/evaluate.py \
+  --config scripts/job_scripts/visual_check_metadrive_bdp.yaml \
+  --visual_check \
+  --model_path /path/to/PPO_BDP_final_model.zip
+```
+
+The overlay uses the existing HighwayEnv pygame viewer or MetaDrive Panda3D
+renderer. It does not create a separate visualization application. Candidate
+colors are red for relatively low scores, neutral near the current-set median,
+and blue for relatively high scores. The selected candidate is always green
+and thicker. In Frenet-PID mode, a yellow dot marks the exact nearest-plus-
+lookahead waypoint used by the PID tracker.
+
+For structured `frenet` or `native_action_frenet` BDP models, the plotted
+trajectory features are the same rows passed to the policy. For `one_hot` and
+built-in categorical models, the policy receives action-label features/logits;
+the plotted trajectories are the corresponding action geometry, not input
+geometry that the model processed.
+
+The score helper returns PyTorch categorical distribution scores from the same
+forward pass used to select the action. PyTorch exposes these as normalized log
+probability logits; their ordering and relative differences are what the color
+map visualizes.
+
 ## Candidate Features
 
 The shared generator builds lateral quintic and longitudinal quartic curves in
@@ -202,4 +245,5 @@ python3 -m pytest -q
 
 The suite includes polynomial constraints, coordinate invariance, HighwayEnv
 native-transition parity, both MetaDrive execution modes, all policy wrapping
-combinations, and tiny PPO checkpoint smoke tests.
+combinations, tiny PPO checkpoint smoke tests, score extraction, and native
+renderer overlay smoke tests.

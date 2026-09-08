@@ -56,11 +56,15 @@ class TrajectoryPIDTracker:
     def __init__(self, config: TrackerConfig) -> None:
         self.config = config
         self.reference: np.ndarray | None = None
+        self.last_target_index: int | None = None
+        self.last_target_point: np.ndarray | None = None
         self._steering_pid = _PID(config.heading_kp, config.heading_ki, config.heading_kd)
         self._speed_pid = _PID(config.speed_kp, config.speed_ki, config.speed_kd)
 
     def reset(self) -> None:
         self.reference = None
+        self.last_target_index = None
+        self.last_target_point = None
         self._steering_pid.reset()
         self._speed_pid.reset()
 
@@ -69,16 +73,28 @@ class TrajectoryPIDTracker:
         if reference.ndim != 2 or reference.shape[1] != 4 or reference.shape[0] < 2:
             raise ValueError(f"trajectory reference must have shape [H,4] with H >= 2, got {reference.shape}")
         self.reference = reference.copy()
+        self.last_target_index = None
+        self.last_target_point = None
         self._steering_pid.reset()
         self._speed_pid.reset()
 
-    def step(self, ego: EgoState, *, dt: float) -> PhysicalControl:
+    def _target(self, ego: EgoState) -> tuple[int, np.ndarray]:
         if self.reference is None:
             raise RuntimeError("set_reference() must be called before tracker.step()")
         delta = self.reference[:, :2] - ego.xy
         nearest = int(np.argmin(np.einsum("ij,ij->i", delta, delta)))
         target_idx = min(nearest + self.config.lookahead_points, self.reference.shape[0] - 1)
-        target = self.reference[target_idx]
+        return target_idx, self.reference[target_idx]
+
+    def preview_target(self, ego: EgoState) -> np.ndarray:
+        """Return the current lookahead target without changing PID state."""
+        _target_index, target = self._target(ego)
+        return target[:2].copy()
+
+    def step(self, ego: EgoState, *, dt: float) -> PhysicalControl:
+        target_idx, target = self._target(ego)
+        self.last_target_index = target_idx
+        self.last_target_point = target[:2].copy()
         target_delta = target[:2] - ego.xy
         left_error = -np.sin(ego.heading) * target_delta[0] + np.cos(ego.heading) * target_delta[1]
         heading_error = float(wrap_angle(target[2] - ego.heading))

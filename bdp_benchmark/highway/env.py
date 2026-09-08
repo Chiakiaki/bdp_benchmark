@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import gymnasium as gym
+import numpy as np
 
 import highway_env  # noqa: F401  Register upstream environments.
 from highway_env.vehicle.kinematics import Vehicle
@@ -41,15 +42,40 @@ class HighwayBenchmarkEnv(gym.Wrapper):
         self.adapter = HighwayAdapter(self.env, generation_config)
         self.tracker = TrajectoryPIDTracker(tracker_config)
         self._latest_candidates: CandidateSet | None = None
+        self._visualizer = None
 
     def build_candidate_set(self) -> CandidateSet:
         self._latest_candidates = self.adapter.build_candidate_set(self.execution_mode)
         return self._latest_candidates
 
+    def get_visual_candidate_set(self) -> CandidateSet:
+        return self._latest_candidates or self.build_candidate_set()
+
+    def preview_pid_target(self, candidate_index: int) -> np.ndarray | None:
+        if self.execution_mode != "frenet_pid":
+            return None
+        candidates = self.get_visual_candidate_set()
+        self.tracker.set_reference(candidates.trajectories[int(candidate_index)])
+        return self.tracker.preview_target(self.adapter.ego_state())
+
+    def set_visual_overlay(self, overlay) -> None:
+        self._visual_overlay = overlay
+        if self._visualizer is not None:
+            self._visualizer.set_overlay(overlay)
+
+    def enable_visualization(self) -> None:
+        from .visualizer import HighwayVisualizer
+
+        if self._visualizer is None:
+            self._visualizer = HighwayVisualizer(self)
+
     def reset(self, **kwargs):
         self._latest_candidates = None
         self.tracker.reset()
-        return self.env.reset(**kwargs)
+        result = self.env.reset(**kwargs)
+        if self._visualizer is not None:
+            self._visualizer.install()
+        return result
 
     def step(self, action):
         action_idx = int(action)
@@ -92,3 +118,8 @@ class HighwayBenchmarkEnv(gym.Wrapper):
         if raw.render_mode == "human":
             raw.render()
         return obs, reward, terminated, truncated, info
+
+    def close(self):
+        if self._visualizer is not None:
+            self._visualizer.close()
+        return self.env.close()
