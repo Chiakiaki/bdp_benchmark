@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 import numpy as np
@@ -84,10 +85,6 @@ def _quintic_coefficients(
     a0 = start_position
     a1 = start_velocity
     a2 = start_acceleration / 2.0
-    matrix = np.asarray(
-        [[t**3, t**4, t**5], [3.0 * t**2, 4.0 * t**3, 5.0 * t**4], [6.0 * t, 12.0 * t**2, 20.0 * t**3]],
-        dtype=np.float64,
-    )
     rhs = np.stack(
         [
             end_position - (a0 + a1 * t + a2 * t**2),
@@ -96,7 +93,7 @@ def _quintic_coefficients(
         ],
         axis=-1,
     )
-    tail = np.einsum("ij,...j->...i", np.linalg.inv(matrix), rhs)
+    tail = np.einsum("ij,...j->...i", _quintic_inverse(t), rhs)
     return np.concatenate([np.stack([a0, a1, a2], axis=-1), tail], axis=-1)
 
 
@@ -111,13 +108,29 @@ def _quartic_coefficients(
     a0 = start_position
     a1 = start_velocity
     a2 = start_acceleration / 2.0
-    matrix = np.asarray([[3.0 * t**2, 4.0 * t**3], [6.0 * t, 12.0 * t**2]], dtype=np.float64)
     rhs = np.stack(
         [end_velocity - (a1 + 2.0 * a2 * t), -(2.0 * a2)],
         axis=-1,
     )
-    tail = np.einsum("ij,...j->...i", np.linalg.inv(matrix), rhs)
+    tail = np.einsum("ij,...j->...i", _quartic_inverse(t), rhs)
     return np.concatenate([np.stack([a0, a1, a2], axis=-1), tail], axis=-1)
+
+
+@lru_cache(maxsize=32)
+def _quintic_inverse(duration: float) -> np.ndarray:
+    t = float(duration)
+    matrix = np.asarray(
+        [[t**3, t**4, t**5], [3.0 * t**2, 4.0 * t**3, 5.0 * t**4], [6.0 * t, 12.0 * t**2, 20.0 * t**3]],
+        dtype=np.float64,
+    )
+    return np.linalg.inv(matrix)
+
+
+@lru_cache(maxsize=32)
+def _quartic_inverse(duration: float) -> np.ndarray:
+    t = float(duration)
+    matrix = np.asarray([[3.0 * t**2, 4.0 * t**3], [6.0 * t, 12.0 * t**2]], dtype=np.float64)
+    return np.linalg.inv(matrix)
 
 
 def _evaluate(coefficients: np.ndarray, times: np.ndarray, derivative: int = 0) -> np.ndarray:
