@@ -164,6 +164,9 @@ cos(relative_heading)
 speed / speed_feature_scale_mps
 ```
 
+`relative_y` is positive toward the vehicle's semantic right. Each simulator
+adapter converts its native lane-coordinate sign into that shared convention.
+
 With `trajectory_sample_count: H`, candidate width is `5 * H`. Generation is
 vectorized across all candidates and horizon samples. SB3 stacks worker output
 as `[E, K, D]`, after which the BDP policy scores it in one Torch batch.

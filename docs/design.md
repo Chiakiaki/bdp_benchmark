@@ -119,7 +119,8 @@ target_d = current_d - steering * native_lateral_span_m
 target_v = current_v + throttle * native_speed_span_mps
 ```
 
-Targets are clipped by configured lateral and speed bounds. The selected raw
+Normalized steering bounds the lateral shift to the configured span, and target
+speed is clipped to configured minimum and maximum values. The selected raw
 action is still executed by MetaDrive's `EnvInputPolicy`.
 
 ## Road Geometry and Features
@@ -153,7 +154,7 @@ shared tracker computes physical steering and longitudinal acceleration from
 cross-track, heading, and speed errors. Simulator adapters convert those
 physical commands into their native low-level action units.
 
-HighwayEnv implements this with a sidecar subclass that applies tracker output
+HighwayEnv implements this with a sidecar wrapper that applies tracker output
 at each simulation frame while preserving upstream observation, reward,
 termination, and traffic logic. MetaDrive uses a sidecar policy/controller that
 persists the selected reference during `decision_repeat` physics steps.
