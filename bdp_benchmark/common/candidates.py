@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -10,6 +11,32 @@ from gymnasium import spaces
 from critic_based_rl.samplers import ExternalCandidateSampler
 
 from .contracts import CandidateSet
+
+
+@dataclass(frozen=True)
+class CandidateGenerationConfig:
+    horizon_s: float = 2.0
+    sample_count: int = 11
+    position_scale_m: float = 50.0
+    speed_scale_mps: float = 40.0
+    native_lateral_span_m: float = 3.5
+    native_speed_span_mps: float = 5.0
+    minimum_target_speed_mps: float = 0.0
+    maximum_target_speed_mps: float = 40.0
+    lane_change_width_scale: float = 1.0
+    speed_delta_mps: float = 5.0
+
+    def __post_init__(self) -> None:
+        if self.horizon_s <= 0.0:
+            raise ValueError("horizon_s must be positive")
+        if self.sample_count < 2:
+            raise ValueError("sample_count must be at least 2")
+        if self.position_scale_m <= 0.0 or self.speed_scale_mps <= 0.0:
+            raise ValueError("feature scales must be positive")
+
+    @property
+    def feature_dim(self) -> int:
+        return 5 * self.sample_count
 
 
 class FrenetCandidateSampler(ExternalCandidateSampler):

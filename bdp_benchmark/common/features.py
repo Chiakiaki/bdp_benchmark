@@ -16,6 +16,7 @@ def encode_ego_local_features(
     ego_heading: float | np.ndarray,
     position_scale_m: float,
     speed_scale_mps: float,
+    lateral_normal_sign: float = 1.0,
 ) -> np.ndarray:
     """Encode `[x,y,yaw,speed]` samples as flattened ego-forward/left features."""
     trajectories = np.asarray(world_trajectories, dtype=np.float64)
@@ -33,13 +34,13 @@ def encode_ego_local_features(
     c = np.cos(ego_heading)[..., None, None]
     s = np.sin(ego_heading)[..., None, None]
     forward = c * delta[..., 0] + s * delta[..., 1]
-    left = -s * delta[..., 0] + c * delta[..., 1]
+    lateral = float(lateral_normal_sign) * (-s * delta[..., 0] + c * delta[..., 1])
     relative_heading = wrap_angle(trajectories[..., 2] - ego_heading[..., None, None])
     speed = trajectories[..., 3]
     point_features = np.stack(
         [
             np.clip(forward / position_scale_m, -1.0, 1.0),
-            np.clip(left / position_scale_m, -1.0, 1.0),
+            np.clip(lateral / position_scale_m, -1.0, 1.0),
             np.sin(relative_heading),
             np.cos(relative_heading),
             np.clip(speed / speed_scale_mps, -1.0, 1.0),

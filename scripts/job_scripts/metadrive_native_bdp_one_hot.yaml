@@ -1,0 +1,37 @@
+environment:
+  simulator: metadrive
+  env_id: MetaDrive-v0
+  trajectory_execution_mode: native_controller
+  environment_config:
+    use_render: false
+    map: 3
+    traffic_density: 0.1
+    num_scenarios: 1000
+    start_seed: 0
+    horizon: 1000
+algorithm:
+  name: PPO
+  num_timesteps: 1000000
+  learning_rate: 0.0003
+  trpo_timesteps_per_batch: 256
+  batch_size: 256
+  ppo_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  n_envs: 4
+  vec_env: subproc
+  seed: 41
+  device: auto
+model_architecture:
+  policy_mode: bdp
+  builtin_policy: MlpPolicy
+  candidate_sampler: one_hot
+  candidate_scorer: dot
+  policy_layers: [256, 256]
+  value_layers: [256, 256]
+logging:
+  log_path: logs
+  log_interval: 5
+  save_freq: 100000
+  eval_freq: 0
+  monitor_mode: env

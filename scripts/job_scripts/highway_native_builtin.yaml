@@ -1,0 +1,32 @@
+environment:
+  simulator: highway
+  env_id: highway-fast-v0
+  trajectory_execution_mode: native_controller
+  environment_config:
+    vehicles_count: 20
+    duration: 30
+algorithm:
+  name: PPO
+  num_timesteps: 1000000
+  learning_rate: 0.0003
+  trpo_timesteps_per_batch: 256
+  batch_size: 256
+  ppo_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  n_envs: 8
+  vec_env: subproc
+  seed: 41
+  device: auto
+model_architecture:
+  policy_mode: builtin
+  builtin_policy: MlpPolicy
+  candidate_sampler: one_hot
+  policy_layers: [256, 256]
+  value_layers: [256, 256]
+logging:
+  log_path: logs
+  log_interval: 5
+  save_freq: 100000
+  eval_freq: 0
+  monitor_mode: env

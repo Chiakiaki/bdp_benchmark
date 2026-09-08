@@ -34,6 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--config", type=str, default=None, help="Benchmark job YAML.")
     parser.add_argument("--run_mode", choices=("train", "evaluate"), default="train")
+    parser.add_argument("--run_name", type=str, default=None)
+    parser.add_argument("--resume_model_path", type=str, default=None)
     parser.add_argument("--simulator", choices=("highway", "metadrive"), default="highway")
     parser.add_argument("--env_id", type=str, default="highway-fast-v0")
     parser.add_argument(
@@ -137,11 +139,18 @@ def parse_args(argv: Sequence[str] | None = None, *, validate: bool = True) -> a
     args = parser.parse_args(argv)
     args.num_timesteps = int(args.num_timesteps)
     args.environment_config = dict(args.environment_config or {})
+    args.dwb_stop_candidate_index = -1
+    if args.simulator == "metadrive" and args.env_id == "highway-fast-v0":
+        args.env_id = "MetaDrive-v0"
     return validate_args(args) if validate else args
 
 
 def resolved_config(args: argparse.Namespace) -> dict[str, Any]:
     return {
+        "runtime": {
+            "run_mode": args.run_mode,
+            "run_name": args.run_name,
+        },
         "environment": {
             "simulator": args.simulator,
             "env_id": args.env_id,
@@ -189,8 +198,14 @@ def resolved_config(args: argparse.Namespace) -> dict[str, Any]:
                 "gae_lambda",
                 "ent_coef",
                 "target_kl",
+                "cg_max_steps",
+                "cg_damping",
+                "n_critic_updates",
+                "sub_sampling_factor",
                 "ppo_epochs",
                 "ppo_clip_range",
+                "value_loss_coef",
+                "max_grad_norm",
                 "seed",
                 "device",
                 "n_envs",
@@ -204,10 +219,15 @@ def resolved_config(args: argparse.Namespace) -> dict[str, Any]:
                 "builtin_policy",
                 "candidate_sampler",
                 "candidate_scorer",
+                "observation_format",
                 "policy_layers",
                 "value_layers",
                 "activation",
                 "share_features_extractor",
+                "features_extractor",
+                "features_dim",
+                "features_extractor_kwargs",
+                "allow_bdp_candidate_count_change",
             )
         },
         "logging": {
@@ -217,5 +237,12 @@ def resolved_config(args: argparse.Namespace) -> dict[str, Any]:
         "evaluation": {
             "evaluate_episodes": args.evaluate_episodes,
             "model_path": args.model_path,
+            "resume_model_path": args.resume_model_path,
+        },
+        "render": {
+            "render_mode": args.render_mode,
+            "render_train": args.render_train,
+            "render_freq": args.render_freq,
+            "play_mode": args.play_mode,
         },
     }

@@ -79,3 +79,11 @@ def test_config_rejects_invalid_horizon_sampling() -> None:
 def test_resolved_config_is_yaml_serializable() -> None:
     config = resolved_config(parse_args([]))
     assert yaml.safe_load(yaml.safe_dump(config)) == config
+
+
+def test_all_reproducible_job_configs_parse() -> None:
+    jobs = sorted((Path(__file__).resolve().parents[1] / "scripts" / "job_scripts").glob("*.yaml"))
+    assert len(jobs) == 12
+    for job in jobs:
+        args = parse_args(["--config", str(job)])
+        assert args.num_timesteps > 0, job.name

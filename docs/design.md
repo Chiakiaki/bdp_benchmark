@@ -115,7 +115,7 @@ MetaDrive native actions are decoded into normalized steering and throttle.
 All steering magnitudes remain distinguishable:
 
 ```text
-target_d = current_d + steering * native_lateral_span_m
+target_d = current_d - steering * native_lateral_span_m
 target_v = current_v + throttle * native_speed_span_mps
 ```
 
@@ -128,6 +128,10 @@ Each adapter provides a local route reference sampled from its current lane or
 navigation route. Frenet samples are warped through this geometry, then rotated
 into the ego-local frame. This exposes curved-road geometry while avoiding
 world-coordinate dependence.
+
+The shared lateral convention is positive to the vehicle's semantic right.
+HighwayEnv and MetaDrive use different coordinate handedness, so each adapter
+provides the sign that maps its lane-local normal into this common convention.
 
 The v1 feature schema contains, per sampled point:
 

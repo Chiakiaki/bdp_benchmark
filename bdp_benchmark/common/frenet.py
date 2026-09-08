@@ -23,9 +23,10 @@ class ReferencePath:
     xy: np.ndarray
     cumulative_s: np.ndarray
     segment_heading: np.ndarray
+    lateral_normal_sign: float = 1.0
 
     @classmethod
-    def from_xy(cls, xy: np.ndarray) -> "ReferencePath":
+    def from_xy(cls, xy: np.ndarray, *, lateral_normal_sign: float = 1.0) -> "ReferencePath":
         points = np.asarray(xy, dtype=np.float64)
         if points.ndim != 2 or points.shape[1] != 2 or points.shape[0] < 2:
             raise ValueError(f"Reference path must have shape [P, 2] with P >= 2, got {points.shape}")
@@ -39,7 +40,14 @@ class ReferencePath:
         length = np.linalg.norm(segment, axis=-1)
         cumulative_s = np.concatenate(([0.0], np.cumsum(length)))
         heading = np.unwrap(np.arctan2(segment[:, 1], segment[:, 0]))
-        return cls(xy=points, cumulative_s=cumulative_s, segment_heading=heading)
+        if lateral_normal_sign not in (-1.0, 1.0):
+            raise ValueError("lateral_normal_sign must be -1 or 1")
+        return cls(
+            xy=points,
+            cumulative_s=cumulative_s,
+            segment_heading=heading,
+            lateral_normal_sign=float(lateral_normal_sign),
+        )
 
     @property
     def length(self) -> float:
@@ -171,14 +179,25 @@ def frenet_to_world(
     d: np.ndarray,
     *,
     speed: np.ndarray,
+    longitudinal_speed: np.ndarray | None = None,
+    lateral_speed: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Map canonical Frenet coordinates (`d > 0` is left) to world trajectories."""
+    """Map Frenet coordinates using the reference path's positive lateral normal."""
     s, d, speed = np.broadcast_arrays(
         np.asarray(s, dtype=np.float64),
         np.asarray(d, dtype=np.float64),
         np.asarray(speed, dtype=np.float64),
     )
     center_x, center_y, heading = reference.sample_center(s)
-    x = center_x - np.sin(heading) * d
-    y = center_y + np.cos(heading) * d
+    signed_d = reference.lateral_normal_sign * d
+    x = center_x - np.sin(heading) * signed_d
+    y = center_y + np.cos(heading) * signed_d
+    if longitudinal_speed is not None or lateral_speed is not None:
+        if longitudinal_speed is None or lateral_speed is None:
+            raise ValueError("longitudinal_speed and lateral_speed must be provided together")
+        longitudinal_speed, lateral_speed = np.broadcast_arrays(
+            np.asarray(longitudinal_speed, dtype=np.float64),
+            np.asarray(lateral_speed, dtype=np.float64),
+        )
+        heading = heading + np.arctan2(reference.lateral_normal_sign * lateral_speed, longitudinal_speed)
     return np.stack([x, y, heading, speed], axis=-1)
