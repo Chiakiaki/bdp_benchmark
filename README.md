@@ -88,6 +88,26 @@ python3 scripts/train.py \
   --config scripts/job_scripts/metadrive_frenet_pid_bdp_frenet.yaml
 ```
 
+The decision and physics rates remain simulator-owned and can be set inside
+`environment_config`. HighwayEnv uses:
+
+```yaml
+environment_config:
+  simulation_frequency: 15  # physics/controller updates per second
+  policy_frequency: 1       # calls to env.step() per second
+```
+
+MetaDrive uses:
+
+```yaml
+environment_config:
+  physics_world_step_size: 0.02
+  decision_repeat: 5        # env.step() rate is 1 / (0.02 * 5) = 10 Hz
+```
+
+In Frenet-PID mode, one high-level action selects a trajectory at each
+`env.step()`, while the tracker runs at every internal physics/controller tick.
+
 CLI values override YAML values. For a short smoke run:
 
 ```bash
