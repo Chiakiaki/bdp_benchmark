@@ -127,6 +127,11 @@ Normalized steering bounds the lateral shift to the configured span, and target
 speed is clipped to configured minimum and maximum values. The selected raw
 action is still executed by MetaDrive's `EnvInputPolicy`.
 
+For actual-state candidate generation, the initial Frenet rates use the direct
+chassis heading and scalar speed. This keeps the visible descriptor aligned
+with a turned vehicle even when its instantaneous velocity has a slip angle.
+The nominal v2 path continues to use only its stored nominal heading and speed.
+
 ## Road Geometry and Features
 
 Each adapter provides a local route reference sampled from its current lane or

@@ -240,6 +240,12 @@ is positive to the right, which accounts for the minus sign. These are
 learnable geometric descriptors, not claims of exact future vehicle dynamics.
 The selected native action is still executed unchanged.
 
+Native candidate geometry uses the actual chassis heading and scalar speed to
+initialize its Frenet motion direction. This is separate from the simulator's
+instantaneous velocity vector, which may have a slip angle during a turn. In
+`frenet_pid_v2`, this actual-state rule applies only to the control/tracking
+side; candidate planning remains based on `x_nominal`.
+
 In `frenet_pid_v2`, candidate paths are drawn from the nominal planning pose,
 while the PID waypoint is computed from the actual vehicle pose. A small gap
 between the vehicle and the path is therefore an intentional visualization of

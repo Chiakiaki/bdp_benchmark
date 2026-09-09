@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from types import SimpleNamespace
 
 from bdp_benchmark.common.candidates import CandidateGenerationConfig
 from bdp_benchmark.common.contracts import EgoState
 from bdp_benchmark.common.tracking import TrackerConfig
+from bdp_benchmark.highway.adapter import HighwayAdapter
 from bdp_benchmark.highway.env import HighwayBenchmarkEnv
 
 
@@ -63,6 +65,28 @@ def test_highway_candidate_features_are_state_dependent_and_do_not_mutate_vehicl
         assert vehicle.target_speed == target_speed_before
     finally:
         env.close()
+
+
+def test_native_descriptor_starts_in_actual_chassis_heading_not_velocity_heading() -> None:
+    lane = SimpleNamespace(
+        local_coordinates=lambda _position: (0.0, 0.0),
+        heading_at=lambda _longitudinal: 0.0,
+    )
+    raw = SimpleNamespace(
+        vehicle=SimpleNamespace(
+            lane_index=("a", "b", 0),
+            position=np.asarray([0.0, 0.0]),
+            heading=0.8,
+            speed=8.0,
+        ),
+        road=SimpleNamespace(network=SimpleNamespace(get_lane=lambda _index: lane)),
+    )
+    adapter = HighwayAdapter(SimpleNamespace(unwrapped=raw), CandidateGenerationConfig())
+
+    _lane_index, _lane, _longitudinal, state, _position = adapter._base_lane_state()
+
+    assert state.s_dot == pytest.approx(8.0 * np.cos(0.8))
+    assert state.d_dot == pytest.approx(8.0 * np.sin(0.8))
 
 
 def test_highway_frenet_pid_mode_steps_with_original_observation_and_reward_contract() -> None:

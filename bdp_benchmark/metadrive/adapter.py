@@ -73,10 +73,10 @@ class MetaDriveAdapter:
         speed = float(self.vehicle.speed) if planning_state is None else float(planning_state.speed)
         longitudinal, lateral = lane.local_coordinates(position)
         lane_heading = float(lane.heading_theta_at(longitudinal))
-        if planning_state is None:
-            velocity = np.asarray(self.vehicle.velocity, dtype=np.float64)
-        else:
-            velocity = speed * np.asarray([np.cos(heading), np.sin(heading)], dtype=np.float64)
+        # MetaDrive's velocity can differ from chassis orientation while the
+        # vehicle is steering. Actual-state descriptors should follow the direct
+        # heading API; nominal states already carry their planned heading.
+        velocity = speed * np.asarray([np.cos(heading), np.sin(heading)], dtype=np.float64)
         lane_forward = np.asarray([np.cos(lane_heading), np.sin(lane_heading)])
         lateral_probe = np.asarray(lane.position(longitudinal, 1.0), dtype=np.float64) - np.asarray(
             lane.position(longitudinal, 0.0), dtype=np.float64
