@@ -9,6 +9,8 @@ The benchmark has two action MDPs:
   trajectories are structured action descriptors only.
 - `frenet_pid`: select one of five generated Frenet references and execute it
   through a trajectory tracking controller.
+- `frenet_pid_v2`: plan from a nominal pose projected onto the previous selected
+  trajectory while PID control still follows the reference using the actual pose.
 
 See [docs/design.md](docs/design.md) for the complete architecture and fairness
 rules.
@@ -42,7 +44,8 @@ directories together, or add their common parent to `PYTHONPATH`:
 
 ## Experiment Matrix
 
-Each simulator supports six controlled comparisons:
+Each simulator supports the six base controlled comparisons, plus an opt-in
+nominal-planning v2 variant:
 
 | Execution mode | Policy | `candidate_sampler` |
 |---|---|---|
@@ -52,10 +55,13 @@ Each simulator supports six controlled comparisons:
 | Frenet PID | SB3 categorical | ignored |
 | Frenet PID | BDP | `one_hot` |
 | Frenet PID | BDP | `frenet` |
+| Frenet PID v2 | SB3 categorical | ignored |
+| Frenet PID v2 | BDP | `one_hot` |
+| Frenet PID v2 | BDP | `frenet` |
 
 HighwayEnv native mode preserves its five official semantic actions. MetaDrive
 native mode preserves its configured steering/throttle grid, which is 25
-actions for the default 5 x 5 grid. Both Frenet-PID modes use this order:
+actions for the default 5 x 5 grid. All Frenet-PID modes use this order:
 
 ```text
 0 LANE_LEFT
@@ -67,7 +73,9 @@ actions for the default 5 x 5 grid. Both Frenet-PID modes use this order:
 
 Comparisons are like-for-like only within the same simulator and execution
 mode. The five-action Frenet-PID MetaDrive environment is intentionally not the
-same MDP as raw MetaDrive's 25-action environment.
+same MDP as raw MetaDrive's 25-action environment. `frenet_pid_v2` preserves
+the legacy action and observation shapes but changes the candidate planning
+origin.
 
 ## Train
 
@@ -107,6 +115,12 @@ environment_config:
 
 In Frenet-PID mode, one high-level action selects a trajectory at each
 `env.step()`, while the tracker runs at every internal physics/controller tick.
+
+In `frenet_pid_v2`, reset initializes `x_nominal = x_actual`. After an action
+is selected, the next planning pose is the nearest point on that previous
+selected trajectory. Candidate generation and features use `x_nominal`; PID
+control, reward, and termination use `x_actual`. Legacy `frenet_pid` remains
+actual-state based.
 
 CLI values override YAML values. For a short smoke run:
 
@@ -226,10 +240,15 @@ is positive to the right, which accounts for the minus sign. These are
 learnable geometric descriptors, not claims of exact future vehicle dynamics.
 The selected native action is still executed unchanged.
 
+In `frenet_pid_v2`, candidate paths are drawn from the nominal planning pose,
+while the PID waypoint is computed from the actual vehicle pose. A small gap
+between the vehicle and the path is therefore an intentional visualization of
+tracking error.
+
 ## Reproducible Jobs
 
-The `scripts/job_scripts` directory contains all twelve initial configurations:
-six policy comparisons for HighwayEnv and six for MetaDrive. To change the
+The `scripts/job_scripts` directory contains the initial policy comparisons for
+HighwayEnv and MetaDrive, plus v2 nominal-planning examples. To change the
 HighwayEnv task, set `env_id` to another compatible five-action environment,
 such as `merge-v1` or `roundabout-v1`. MetaDrive currently supports
 `MetaDrive-v0`; `ScenarioEnv-v0` is also registered by the adapter but requires

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from bdp_benchmark.common.candidates import CandidateGenerationConfig
+from bdp_benchmark.common.contracts import EgoState
 from bdp_benchmark.common.tracking import TrackerConfig
 from bdp_benchmark.highway.env import HighwayBenchmarkEnv
 
@@ -67,6 +68,7 @@ def test_highway_candidate_features_are_state_dependent_and_do_not_mutate_vehicl
 def test_highway_frenet_pid_mode_steps_with_original_observation_and_reward_contract() -> None:
     env = _make_env(execution_mode="frenet_pid")
     try:
+        assert env._nominal_state is None
         obs, _ = env.reset(seed=10)
         next_obs, reward, terminated, truncated, info = env.step(1)
 
@@ -75,6 +77,46 @@ def test_highway_frenet_pid_mode_steps_with_original_observation_and_reward_cont
         assert isinstance(terminated, bool)
         assert isinstance(truncated, bool)
         assert isinstance(info, dict)
+    finally:
+        env.close()
+
+
+def test_highway_v2_generation_uses_supplied_nominal_pose_and_heading() -> None:
+    env = _make_env(execution_mode="frenet_pid_v2")
+    try:
+        env.reset(seed=11)
+        actual = env.adapter.ego_state()
+        nominal = EgoState(
+            x=actual.x + 2.0,
+            y=actual.y,
+            heading=0.65,
+            speed=actual.speed,
+        )
+        candidates = env.adapter.build_candidate_set("frenet_pid_v2", nominal)
+
+        np.testing.assert_allclose(candidates.trajectories[0, 0, :2], [nominal.x, nominal.y], atol=1e-5)
+        assert candidates.trajectories[0, 0, 2] == pytest.approx(nominal.heading)
+        assert not np.allclose(candidates.features, env.adapter.build_candidate_set("frenet_pid", None).features)
+        assert env.adapter.ego_state() == actual
+    finally:
+        env.close()
+
+
+def test_highway_v2_commits_selected_path_then_projects_actual_position_on_next_plan() -> None:
+    env = _make_env(execution_mode="frenet_pid_v2")
+    try:
+        env.reset(seed=12)
+        first = env.build_candidate_set()
+        assert env._nominal_state is not None
+        assert env._nominal_state.history_valid is False
+        env.step(1)
+        assert env._nominal_state.history_valid is True
+
+        second = env.build_candidate_set()
+        projection = env._nominal_state.last_projection
+        assert projection is not None
+        assert projection.history_valid is True
+        assert second.trajectories.shape == first.trajectories.shape
     finally:
         env.close()
 

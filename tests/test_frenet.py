@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from bdp_benchmark.common.features import encode_ego_local_features
 from bdp_benchmark.common.frenet import FrenetState, ReferencePath, frenet_to_world, generate_frenet_trajectories
@@ -92,3 +93,22 @@ def test_ego_local_features_are_invariant_to_world_translation_and_rotation() ->
 
     assert original.shape == (1, 15)
     np.testing.assert_allclose(rotated, original, atol=1e-7)
+
+
+def test_frenet_to_world_can_preserve_direct_initial_heading_when_stationary() -> None:
+    reference = ReferencePath.from_xy(np.asarray([[0.0, 0.0], [10.0, 0.0]]))
+    s = np.asarray([[0.0, 1.0, 2.0]])
+    d = np.zeros_like(s)
+
+    world = frenet_to_world(
+        reference,
+        s,
+        d,
+        speed=np.zeros_like(s),
+        longitudinal_speed=np.zeros_like(s),
+        lateral_speed=np.zeros_like(s),
+        initial_heading_rad=np.asarray([1.25]),
+    )
+
+    assert world[0, 0, 2] == pytest.approx(1.25)
+    assert world[0, 1, 2] == pytest.approx(0.0)

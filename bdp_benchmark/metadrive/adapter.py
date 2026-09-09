@@ -66,11 +66,17 @@ class MetaDriveAdapter:
             speed=float(self.vehicle.speed),
         )
 
-    def _lane_state(self) -> tuple[float, FrenetState]:
+    def _lane_state(self, planning_state: EgoState | None = None) -> tuple[float, FrenetState, np.ndarray]:
         lane = self.lane
-        longitudinal, lateral = lane.local_coordinates(self.vehicle.position)
+        position = self.vehicle.position if planning_state is None else planning_state.xy
+        heading = float(self.vehicle.heading_theta) if planning_state is None else float(planning_state.heading)
+        speed = float(self.vehicle.speed) if planning_state is None else float(planning_state.speed)
+        longitudinal, lateral = lane.local_coordinates(position)
         lane_heading = float(lane.heading_theta_at(longitudinal))
-        velocity = np.asarray(self.vehicle.velocity, dtype=np.float64)
+        if planning_state is None:
+            velocity = np.asarray(self.vehicle.velocity, dtype=np.float64)
+        else:
+            velocity = speed * np.asarray([np.cos(heading), np.sin(heading)], dtype=np.float64)
         lane_forward = np.asarray([np.cos(lane_heading), np.sin(lane_heading)])
         lateral_probe = np.asarray(lane.position(longitudinal, 1.0), dtype=np.float64) - np.asarray(
             lane.position(longitudinal, 0.0), dtype=np.float64
@@ -83,14 +89,18 @@ class MetaDriveAdapter:
             d=float(lateral),
             d_dot=float(np.dot(velocity, lateral_probe)),
             d_ddot=0.0,
-        )
+        ), np.asarray(position, dtype=np.float64)
 
-    def action_targets(self, execution_mode: str) -> tuple[np.ndarray, np.ndarray]:
-        _, state = self._lane_state()
+    def action_targets(
+        self,
+        execution_mode: str,
+        planning_state: EgoState | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        _, state, position = self._lane_state(planning_state)
         if execution_mode == "native_controller":
             return native_action_targets(
                 current_d=float(state.d),
-                current_speed=float(self.vehicle.speed),
+                current_speed=float(self.vehicle.speed) if planning_state is None else float(planning_state.speed),
                 steering_dim=int(self.env.config["discrete_steering_dim"]),
                 throttle_dim=int(self.env.config["discrete_throttle_dim"]),
                 lateral_span_m=self.config.native_lateral_span_m,
@@ -98,9 +108,9 @@ class MetaDriveAdapter:
                 minimum_speed_mps=self.config.minimum_target_speed_mps,
                 maximum_speed_mps=self.config.maximum_target_speed_mps,
             )
-        lane_width = float(self.lane.width_at(self.lane.local_coordinates(self.vehicle.position)[0]))
+        lane_width = float(self.lane.width_at(self.lane.local_coordinates(position)[0]))
         lane_delta = lane_width * self.config.lane_change_width_scale
-        speed = float(self.vehicle.speed)
+        speed = float(self.vehicle.speed) if planning_state is None else float(planning_state.speed)
         target_d = np.asarray(
             [float(state.d) - lane_delta, float(state.d), float(state.d) + lane_delta, float(state.d), float(state.d)],
             dtype=np.float64,
@@ -128,9 +138,13 @@ class MetaDriveAdapter:
         normal_sign = 1.0 if float(np.dot(standard_left, lane_lateral)) >= 0.0 else -1.0
         return ReferencePath.from_xy(points, lateral_normal_sign=normal_sign)
 
-    def build_candidate_set(self, execution_mode: str) -> CandidateSet:
-        start_longitudinal, initial = self._lane_state()
-        target_d, target_speed = self.action_targets(execution_mode)
+    def build_candidate_set(
+        self,
+        execution_mode: str,
+        planning_state: EgoState | None = None,
+    ) -> CandidateSet:
+        start_longitudinal, initial, _ = self._lane_state(planning_state)
+        target_d, target_speed = self.action_targets(execution_mode, planning_state)
         frenet = generate_frenet_trajectories(
             initial,
             target_d,
@@ -139,6 +153,7 @@ class MetaDriveAdapter:
             sample_count=self.config.sample_count,
         )
         reference = self._reference_path(start_longitudinal, float(np.max(frenet[..., 0])) + 1.0)
+        feature_origin = self.ego_state() if planning_state is None else planning_state
         world = frenet_to_world(
             reference,
             frenet[..., 0],
@@ -146,12 +161,12 @@ class MetaDriveAdapter:
             speed=np.hypot(frenet[..., 2], frenet[..., 3]),
             longitudinal_speed=frenet[..., 2],
             lateral_speed=frenet[..., 3],
+            initial_heading_rad=np.asarray(feature_origin.heading),
         )
-        ego = self.ego_state()
         features = encode_ego_local_features(
             world,
-            ego_xy=ego.xy,
-            ego_heading=ego.heading,
+            ego_xy=feature_origin.xy,
+            ego_heading=feature_origin.heading,
             position_scale_m=self.config.position_scale_m,
             speed_scale_mps=self.config.speed_scale_mps,
             lateral_normal_sign=reference.lateral_normal_sign,

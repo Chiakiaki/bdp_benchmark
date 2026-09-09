@@ -194,6 +194,7 @@ def frenet_to_world(
     speed: np.ndarray,
     longitudinal_speed: np.ndarray | None = None,
     lateral_speed: np.ndarray | None = None,
+    initial_heading_rad: np.ndarray | None = None,
 ) -> np.ndarray:
     """Map Frenet coordinates using the reference path's positive lateral normal."""
     s, d, speed = np.broadcast_arrays(
@@ -213,4 +214,10 @@ def frenet_to_world(
             np.asarray(lateral_speed, dtype=np.float64),
         )
         heading = heading + np.arctan2(reference.lateral_normal_sign * lateral_speed, longitudinal_speed)
+    if initial_heading_rad is not None:
+        heading = np.array(heading, copy=True)
+        heading[..., 0] = np.broadcast_to(
+            np.asarray(initial_heading_rad, dtype=np.float64),
+            heading[..., 0].shape,
+        )
     return np.stack([x, y, heading, speed], axis=-1)

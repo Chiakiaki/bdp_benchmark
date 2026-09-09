@@ -119,3 +119,20 @@ def test_visual_check_job_config_also_enables_human_evaluation_defaults() -> Non
     assert args.run_mode == "evaluate"
     assert args.render_mode == "human"
     assert args.n_envs == 1
+
+
+def test_frenet_pid_v2_is_an_explicit_supported_execution_mode() -> None:
+    args = parse_args(
+        [
+            "--simulator",
+            "highway",
+            "--trajectory_execution_mode",
+            "frenet_pid_v2",
+            "--policy_mode",
+            "bdp",
+            "--candidate_sampler",
+            "frenet",
+        ]
+    )
+
+    assert args.trajectory_execution_mode == "frenet_pid_v2"

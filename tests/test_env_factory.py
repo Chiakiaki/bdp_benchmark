@@ -8,7 +8,7 @@ from bdp_benchmark.env_factory import make_single_env
 
 
 @pytest.mark.parametrize("simulator", ["highway", "metadrive"])
-@pytest.mark.parametrize("execution_mode", ["native_controller", "frenet_pid"])
+@pytest.mark.parametrize("execution_mode", ["native_controller", "frenet_pid", "frenet_pid_v2"])
 @pytest.mark.parametrize(
     ("policy_mode", "structured"),
     [("builtin", False), ("one_hot", False), ("frenet", True)],
@@ -47,7 +47,7 @@ def test_factory_constructs_full_policy_execution_matrix(
     env = make_single_env(args)
     try:
         obs, _ = env.reset(seed=0)
-        raw_actions = 5 if execution_mode == "frenet_pid" or simulator == "highway" else 25
+        raw_actions = 5 if execution_mode in ("frenet_pid", "frenet_pid_v2") or simulator == "highway" else 25
         assert env.action_space.n == raw_actions
         if actual_policy_mode == "builtin":
             assert isinstance(obs, np.ndarray)

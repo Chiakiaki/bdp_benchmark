@@ -44,7 +44,7 @@ simulator: highway  # highway or metadrive
 ### Trajectory execution
 
 ```yaml
-trajectory_execution_mode: native_controller  # native_controller or frenet_pid
+trajectory_execution_mode: native_controller  # native_controller, frenet_pid, or frenet_pid_v2
 ```
 
 `native_controller` preserves the simulator's original control transition. A
@@ -53,7 +53,8 @@ the selected raw action is sent to the simulator unchanged.
 
 `frenet_pid` changes the action MDP. Five semantic actions generate five Frenet
 reference trajectories, and a low-level tracker follows the selected reference
-during the simulator substeps.
+during the simulator substeps. `frenet_pid_v2` uses the same five-action PID
+executor but changes only the planning origin to a nominal projected state.
 
 ### Policy/candidate representation
 
@@ -72,6 +73,9 @@ Each simulator and execution mode supports these comparisons:
 | Frenet PID | built-in categorical | none |
 | Frenet PID | BDP | one-hot semantic intent |
 | Frenet PID | BDP | executable Frenet reference features |
+| Frenet PID v2 | built-in categorical | none |
+| Frenet PID v2 | BDP | one-hot semantic intent |
+| Frenet PID v2 | BDP | executable Frenet reference features |
 
 HighwayEnv native mode has five actions. MetaDrive native mode preserves its
 configured steering/throttle grid, which is 5 x 5 and therefore 25 actions by
@@ -158,6 +162,26 @@ HighwayEnv implements this with a sidecar wrapper that applies tracker output
 at each simulation frame while preserving upstream observation, reward,
 termination, and traffic logic. MetaDrive uses a sidecar policy/controller that
 persists the selected reference during `decision_repeat` physics steps.
+
+## Actual and Nominal Planning States
+
+`native_controller` and legacy `frenet_pid` use `x_actual` for candidate
+generation and feature construction. In `frenet_pid_v2`, each environment
+stores one previous selected trajectory:
+
+```text
+reset:       x_nominal = x_actual
+next plan:   x_nominal = nearest_point(previous_selected, x_actual.xy)
+planning:    generate candidates/features from x_nominal
+control:     PID compares selected reference with x_actual
+feedback:    reward and termination remain actual-state based
+```
+
+The initial nominal heading may equal the actual heading at reset. Once a
+previous trajectory exists, nominal heading and speed come from that trajectory;
+the actual chassis heading is not used to generate the next candidate set.
+Actual heading remains available to the PID tracking error. Projection is a
+nearest-point operation in v1, with no window or tracking-error rejection guard.
 
 ## Fairness Rules
 

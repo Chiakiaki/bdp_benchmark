@@ -48,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--env_id", type=str, default="highway-fast-v0")
     parser.add_argument(
         "--trajectory_execution_mode",
-        choices=("native_controller", "frenet_pid"),
+        choices=("native_controller", "frenet_pid", "frenet_pid_v2"),
         default="native_controller",
     )
     parser.add_argument(
@@ -123,9 +123,14 @@ def validate_args(args: argparse.Namespace) -> argparse.Namespace:
         allowed = {
             "native_controller": {"one_hot", "native_action_frenet"},
             "frenet_pid": {"one_hot", "frenet"},
+            "frenet_pid_v2": {"one_hot", "frenet"},
         }[args.trajectory_execution_mode]
         if args.candidate_sampler not in allowed:
-            required = "candidate_sampler=frenet" if args.trajectory_execution_mode == "frenet_pid" else "one_hot or native_action_frenet"
+            required = (
+                "candidate_sampler=frenet"
+                if args.trajectory_execution_mode in ("frenet_pid", "frenet_pid_v2")
+                else "one_hot or native_action_frenet"
+            )
             raise ValueError(
                 f"{args.trajectory_execution_mode} BDP mode requires {required}; got {args.candidate_sampler}"
             )

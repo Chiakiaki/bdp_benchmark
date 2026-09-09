@@ -10,6 +10,7 @@ from metadrive.envs.scenario_env import ScenarioEnv
 
 from bdp_benchmark.common.candidates import CandidateGenerationConfig
 from bdp_benchmark.common.contracts import CandidateSet
+from bdp_benchmark.common.nominal import NominalTrajectoryState
 from bdp_benchmark.common.tracking import TrackerConfig
 
 from .adapter import MetaDriveAdapter
@@ -27,7 +28,7 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
         env_config: dict[str, Any] | None = None,
         render_mode: str | None = None,
     ) -> None:
-        if execution_mode not in ("native_controller", "frenet_pid"):
+        if execution_mode not in ("native_controller", "frenet_pid", "frenet_pid_v2"):
             raise ValueError(f"Unsupported MetaDrive execution mode: {execution_mode}")
         config = dict(env_config or {})
         config["use_render"] = render_mode == "human" or bool(config.get("use_render", False))
@@ -58,6 +59,7 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
         self.tracker_config = tracker_config
         self._latest_candidates: CandidateSet | None = None
         self._visualizer = None
+        self._nominal_state = NominalTrajectoryState() if execution_mode == "frenet_pid_v2" else None
 
     def _pid_policy(self) -> MetaDriveFrenetPIDPolicy:
         policy = self.env.engine.get_policy(self.env.agent.name)
@@ -67,6 +69,8 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
 
     def reset(self, **kwargs):
         self._latest_candidates = None
+        if self._nominal_state is not None:
+            self._nominal_state.reset()
         if self._visualizer is not None:
             self._visualizer.clear()
         options = kwargs.pop("options", None)
@@ -79,19 +83,26 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
         result = self.env.reset(**kwargs)
         if self.execution_mode == "frenet_pid":
             self._pid_policy().configure_tracker(self.tracker_config)
+        elif self.execution_mode == "frenet_pid_v2":
+            self._pid_policy().configure_tracker(self.tracker_config)
+        if self._nominal_state is not None:
+            self._nominal_state.planning_state(self.adapter.ego_state())
         if self._visualizer is not None:
             self._visualizer.install()
         return result
 
     def build_candidate_set(self) -> CandidateSet:
-        self._latest_candidates = self.adapter.build_candidate_set(self.execution_mode)
+        planning_state = None
+        if self._nominal_state is not None:
+            planning_state = self._nominal_state.planning_state(self.adapter.ego_state())
+        self._latest_candidates = self.adapter.build_candidate_set(self.execution_mode, planning_state)
         return self._latest_candidates
 
     def get_visual_candidate_set(self) -> CandidateSet:
         return self._latest_candidates or self.build_candidate_set()
 
     def preview_pid_target(self, candidate_index: int):
-        if self.execution_mode != "frenet_pid":
+        if self.execution_mode not in ("frenet_pid", "frenet_pid_v2"):
             return None
         candidates = self.get_visual_candidate_set()
         policy = self._pid_policy()
@@ -111,10 +122,12 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
 
     def step(self, action):
         action_idx = int(action)
-        if self.execution_mode == "frenet_pid":
+        if self.execution_mode in ("frenet_pid", "frenet_pid_v2"):
             candidate_set = self._latest_candidates or self.build_candidate_set()
             if action_idx < 0 or action_idx >= candidate_set.trajectories.shape[0]:
                 raise ValueError(f"Invalid candidate action {action_idx}")
+            if self._nominal_state is not None:
+                self._nominal_state.commit(candidate_set.trajectories[action_idx])
             self._pid_policy().set_reference(candidate_set.trajectories[action_idx])
         self._latest_candidates = None
         return self.env.step(action_idx)

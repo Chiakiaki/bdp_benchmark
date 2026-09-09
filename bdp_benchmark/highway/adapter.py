@@ -6,7 +6,7 @@ import numpy as np
 
 from bdp_benchmark.common.candidates import CandidateGenerationConfig
 from bdp_benchmark.common.contracts import CandidateSet, EgoState
-from bdp_benchmark.common.features import encode_ego_local_features
+from bdp_benchmark.common.features import encode_ego_local_features, wrap_angle
 from bdp_benchmark.common.frenet import FrenetState, ReferencePath, frenet_to_world, generate_frenet_trajectories
 
 
@@ -28,46 +28,62 @@ class HighwayAdapter:
             speed=float(vehicle.speed),
         )
 
-    def _base_lane_state(self):
+    def _base_lane_state(self, planning_state: EgoState | None = None):
         vehicle = self.raw.vehicle
         lane_index = vehicle.lane_index
         lane = self.raw.road.network.get_lane(lane_index)
-        longitudinal, lateral = lane.local_coordinates(vehicle.position)
+        position = vehicle.position if planning_state is None else planning_state.xy
+        heading = float(vehicle.heading) if planning_state is None else float(planning_state.heading)
+        speed = float(vehicle.speed) if planning_state is None else float(planning_state.speed)
+        longitudinal, lateral = lane.local_coordinates(position)
         lane_heading = float(lane.heading_at(longitudinal))
-        heading_error = float(vehicle.heading - lane_heading)
+        heading_error = (
+            float(vehicle.heading - lane_heading)
+            if planning_state is None
+            else float(wrap_angle(heading - lane_heading))
+        )
         state = FrenetState(
             s=0.0,
-            s_dot=max(float(vehicle.speed * np.cos(heading_error)), 0.0),
+            s_dot=max(float(speed * np.cos(heading_error)), 0.0),
             s_ddot=0.0,
             d=float(lateral),
-            d_dot=float(vehicle.speed * np.sin(heading_error)),
+            d_dot=float(speed * np.sin(heading_error)),
             d_ddot=0.0,
         )
-        return lane_index, lane, float(longitudinal), state
+        return lane_index, lane, float(longitudinal), state, np.asarray(position, dtype=np.float64)
 
-    def _shift_target_lane(self, target_lane_index, direction: int):
+    def _shift_target_lane(self, target_lane_index, direction: int, position=None):
         from_node, to_node, lane_id = target_lane_index
         lane_count = len(self.raw.road.network.graph[from_node][to_node])
         shifted_id = int(np.clip(int(lane_id) + direction, 0, lane_count - 1))
         shifted = (from_node, to_node, shifted_id)
-        if self.raw.road.network.get_lane(shifted).is_reachable_from(self.raw.vehicle.position):
+        position = self.raw.vehicle.position if position is None else position
+        if self.raw.road.network.get_lane(shifted).is_reachable_from(position):
             return shifted
         return target_lane_index
 
-    def _target_lateral_in_base_lane(self, target_lane_index, base_lane, base_longitudinal: float) -> float:
+    def _target_lateral_in_base_lane(self, target_lane_index, base_lane, position) -> float:
         target_lane = self.raw.road.network.get_lane(target_lane_index)
-        target_longitudinal, _ = target_lane.local_coordinates(self.raw.vehicle.position)
+        target_longitudinal, _ = target_lane.local_coordinates(position)
         target_center = target_lane.position(target_longitudinal, 0.0)
         _, target_lateral = base_lane.local_coordinates(target_center)
         return float(target_lateral)
 
-    def action_targets(self, execution_mode: str) -> tuple[np.ndarray, np.ndarray]:
+    def action_targets(
+        self,
+        execution_mode: str,
+        planning_state: EgoState | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         del execution_mode
         vehicle = self.raw.vehicle
-        _, base_lane, base_longitudinal, _ = self._base_lane_state()
+        _, base_lane, _base_longitudinal, _state, position = self._base_lane_state(planning_state)
         actions = self.raw.action_type.actions
-        target_lane_index = getattr(vehicle, "target_lane_index", vehicle.lane_index)
-        retained_speed = float(getattr(vehicle, "target_speed", vehicle.speed))
+        if planning_state is None:
+            target_lane_index = getattr(vehicle, "target_lane_index", vehicle.lane_index)
+            retained_speed = float(getattr(vehicle, "target_speed", vehicle.speed))
+        else:
+            target_lane_index = vehicle.lane_index
+            retained_speed = float(planning_state.speed)
         target_d: list[float] = []
         target_speed: list[float] = []
         for action_idx in range(len(actions)):
@@ -75,15 +91,16 @@ class HighwayAdapter:
             lane_index = target_lane_index
             speed = retained_speed
             if action_name == "LANE_LEFT":
-                lane_index = self._shift_target_lane(target_lane_index, -1)
+                lane_index = self._shift_target_lane(target_lane_index, -1, position)
             elif action_name == "LANE_RIGHT":
-                lane_index = self._shift_target_lane(target_lane_index, 1)
+                lane_index = self._shift_target_lane(target_lane_index, 1, position)
             elif action_name in ("FASTER", "SLOWER"):
                 direction = 1 if action_name == "FASTER" else -1
-                speed_index = int(vehicle.speed_to_index(vehicle.speed)) + direction
+                reference_speed = float(vehicle.speed) if planning_state is None else float(planning_state.speed)
+                speed_index = int(vehicle.speed_to_index(reference_speed)) + direction
                 speed_index = int(np.clip(speed_index, 0, len(vehicle.target_speeds) - 1))
                 speed = float(vehicle.index_to_speed(speed_index))
-            target_d.append(self._target_lateral_in_base_lane(lane_index, base_lane, base_longitudinal))
+            target_d.append(self._target_lateral_in_base_lane(lane_index, base_lane, position))
             target_speed.append(speed)
         return np.asarray(target_d, dtype=np.float64), np.clip(
             np.asarray(target_speed, dtype=np.float64),
@@ -91,9 +108,9 @@ class HighwayAdapter:
             self.config.maximum_target_speed_mps,
         )
 
-    def _reference_path(self, required_length: float) -> ReferencePath:
+    def _reference_path(self, required_length: float, planning_state: EgoState | None = None) -> ReferencePath:
         vehicle = self.raw.vehicle
-        lane_index, _, longitudinal, _ = self._base_lane_state()
+        lane_index, _, longitudinal, _, _ = self._base_lane_state(planning_state)
         route = list(vehicle.route or [lane_index])
         if not route or route[0][:2] != lane_index[:2]:
             route.insert(0, lane_index)
@@ -107,9 +124,13 @@ class HighwayAdapter:
         ]
         return ReferencePath.from_xy(np.asarray(points, dtype=np.float64))
 
-    def build_candidate_set(self, execution_mode: str) -> CandidateSet:
-        _, _, _, initial = self._base_lane_state()
-        target_d, target_speed = self.action_targets(execution_mode)
+    def build_candidate_set(
+        self,
+        execution_mode: str,
+        planning_state: EgoState | None = None,
+    ) -> CandidateSet:
+        _, _, _, initial, _ = self._base_lane_state(planning_state)
+        target_d, target_speed = self.action_targets(execution_mode, planning_state)
         frenet = generate_frenet_trajectories(
             initial,
             target_d,
@@ -117,7 +138,8 @@ class HighwayAdapter:
             horizon_s=self.config.horizon_s,
             sample_count=self.config.sample_count,
         )
-        reference = self._reference_path(float(np.max(frenet[..., 0])) + 1.0)
+        reference = self._reference_path(float(np.max(frenet[..., 0])) + 1.0, planning_state)
+        feature_origin = self.ego_state() if planning_state is None else planning_state
         world = frenet_to_world(
             reference,
             frenet[..., 0],
@@ -125,12 +147,12 @@ class HighwayAdapter:
             speed=np.hypot(frenet[..., 2], frenet[..., 3]),
             longitudinal_speed=frenet[..., 2],
             lateral_speed=frenet[..., 3],
+            initial_heading_rad=np.asarray(feature_origin.heading),
         )
-        ego = self.ego_state()
         features = encode_ego_local_features(
             world,
-            ego_xy=ego.xy,
-            ego_heading=ego.heading,
+            ego_xy=feature_origin.xy,
+            ego_heading=feature_origin.heading,
             position_scale_m=self.config.position_scale_m,
             speed_scale_mps=self.config.speed_scale_mps,
             lateral_normal_sign=reference.lateral_normal_sign,
