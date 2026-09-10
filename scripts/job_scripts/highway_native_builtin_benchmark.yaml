@@ -1,0 +1,43 @@
+# Native HighwayEnv PPO benchmark.
+# The upstream HighwayEnv SB3 example uses 6 workers, n_steps=128,
+# batch_size=64, 10 epochs, lr=5e-4, gamma=0.8, and a [256, 256] MLP.
+# Its 2e4 steps are a demonstration smoke run; this benchmark uses 2e6 steps.
+runtime:
+  run_mode: train
+  run_name: highway_native_builtin_benchmark
+environment:
+  simulator: highway
+  env_id: highway-fast-v0
+  trajectory_execution_mode: native_controller
+  environment_config:
+    lanes_count: 3
+    vehicles_count: 20
+    duration: 30
+    simulation_frequency: 5
+    policy_frequency: 1
+algorithm:
+  name: PPO
+  num_timesteps: 2000000
+  learning_rate: 5.0e-4
+  schedule: fixed
+  trpo_timesteps_per_batch: 128
+  batch_size: 64
+  ppo_epochs: 10
+  gamma: 0.80
+  gae_lambda: 0.95
+  target_kl: null
+  n_envs: 6
+  vec_env: subproc
+  seed: 41
+  device: auto
+model_architecture:
+  policy_mode: builtin
+  builtin_policy: MlpPolicy
+  policy_layers: [256, 256]
+  value_layers: [256, 256]
+logging:
+  log_path: logs/benchmark
+  log_interval: 10
+  save_freq: 200000
+  eval_freq: 0
+  monitor_mode: env

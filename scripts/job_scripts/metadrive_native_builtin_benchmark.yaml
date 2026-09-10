@@ -1,0 +1,49 @@
+# Native MetaDrive PPO benchmark.
+# MetaDrive's official generalization recipe uses a 1000-step horizon,
+# 5 rollout workers, approximately 20k-step train batches, minibatch 256,
+# 10 PPO epochs, lr=3e-4, gamma=0.99, and lambda=0.95. This SB3 job keeps
+# that structure and uses the same 2e6-step budget as the Highway pair.
+runtime:
+  run_mode: train
+  run_name: metadrive_native_builtin_benchmark
+environment:
+  simulator: metadrive
+  env_id: MetaDrive-v0
+  trajectory_execution_mode: native_controller
+  environment_config:
+    use_render: false
+    map: 3
+    traffic_density: 0.1
+    random_traffic: false
+    num_scenarios: 1000
+    start_seed: 5000
+    horizon: 1000
+    physics_world_step_size: 0.02
+    decision_repeat: 5
+    log_level: 50
+algorithm:
+  name: PPO
+  num_timesteps: 2000000
+  learning_rate: 3.0e-4
+  schedule: fixed
+  trpo_timesteps_per_batch: 4000
+  batch_size: 256
+  ppo_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  target_kl: null
+  n_envs: 5
+  vec_env: subproc
+  seed: 41
+  device: auto
+model_architecture:
+  policy_mode: builtin
+  builtin_policy: MlpPolicy
+  policy_layers: [256, 256]
+  value_layers: [256, 256]
+logging:
+  log_path: logs/benchmark
+  log_interval: 10
+  save_freq: 200000
+  eval_freq: 0
+  monitor_mode: env

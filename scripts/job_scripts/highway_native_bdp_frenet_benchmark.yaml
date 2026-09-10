@@ -1,0 +1,49 @@
+# Native HighwayEnv BDP-Frenet benchmark paired with
+# highway_native_builtin_benchmark.yaml. The simulator action/controller is
+# unchanged; Frenet rows are only candidate features for the BDP scorer.
+runtime:
+  run_mode: train
+  run_name: highway_native_bdp_frenet_benchmark
+environment:
+  simulator: highway
+  env_id: highway-fast-v0
+  trajectory_execution_mode: native_controller
+  environment_config:
+    lanes_count: 3
+    vehicles_count: 20
+    duration: 30
+    simulation_frequency: 5
+    policy_frequency: 1
+frenet:
+  trajectory_horizon_s: 2.0
+  trajectory_sample_count: 11
+  position_feature_scale_m: 50.0
+  speed_feature_scale_mps: 40.0
+algorithm:
+  name: PPO
+  num_timesteps: 2000000
+  learning_rate: 5.0e-4
+  schedule: fixed
+  trpo_timesteps_per_batch: 128
+  batch_size: 64
+  ppo_epochs: 10
+  gamma: 0.80
+  gae_lambda: 0.95
+  target_kl: null
+  n_envs: 6
+  vec_env: subproc
+  seed: 41
+  device: auto
+model_architecture:
+  policy_mode: bdp
+  builtin_policy: MlpPolicy
+  candidate_sampler: native_action_frenet
+  candidate_scorer: dot
+  policy_layers: [256, 256]
+  value_layers: [256, 256]
+logging:
+  log_path: logs/benchmark
+  log_interval: 10
+  save_freq: 200000
+  eval_freq: 0
+  monitor_mode: env
