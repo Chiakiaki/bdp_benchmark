@@ -3,7 +3,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from bdp_benchmark.metadrive.adapter import decode_discrete_action_grid, native_action_targets
+from bdp_benchmark.metadrive.adapter import (
+    decode_discrete_action_grid,
+    frenet_pid_target_grid,
+    native_action_targets,
+)
 from bdp_benchmark.common.candidates import CandidateGenerationConfig
 from bdp_benchmark.common.tracking import TrackerConfig
 from bdp_benchmark.metadrive.env import MetaDriveBenchmarkEnv
@@ -36,6 +40,55 @@ def test_all_five_metadrive_steering_bins_have_distinct_continuous_lateral_targe
     # positive right. The descriptor must account for that sign difference.
     np.testing.assert_allclose(center_throttle_targets, [3.7, 1.95, 0.2, -1.55, -3.3])
     np.testing.assert_allclose(target_speed[10:15], 8.0)
+
+
+def test_frenet_pid_grid_combines_three_lane_centers_with_five_speed_offsets() -> None:
+    target_d, target_speed = frenet_pid_target_grid(
+        lane_centers=np.asarray([-3.5, 0.0, 3.5]),
+        current_speed=8.0,
+        speed_delta_mps=4.0,
+        minimum_speed_mps=0.0,
+        maximum_speed_mps=20.0,
+    )
+
+    assert target_d.shape == (15,)
+    assert target_speed.shape == (15,)
+    np.testing.assert_allclose(target_d.reshape(5, 3), np.tile([-3.5, 0.0, 3.5], (5, 1)))
+    np.testing.assert_allclose(target_speed.reshape(5, 3)[:, 0], [4.0, 6.0, 8.0, 10.0, 12.0])
+    np.testing.assert_allclose(
+        target_speed.reshape(5, 3),
+        np.repeat(np.asarray([[4.0], [6.0], [8.0], [10.0], [12.0]]), 3, axis=1),
+    )
+
+
+def test_frenet_pid_lane_centers_use_navigation_lanes_and_virtual_boundary_lane() -> None:
+    env = MetaDriveBenchmarkEnv(
+        execution_mode="frenet_pid",
+        generation_config=CandidateGenerationConfig(horizon_s=0.5, sample_count=5),
+        tracker_config=TrackerConfig(),
+        env_config={
+            "use_render": False,
+            "traffic_density": 0.0,
+            "num_scenarios": 1,
+            "map": 3,
+            "horizon": 20,
+            "log_level": 50,
+        },
+    )
+    try:
+        env.reset(seed=0)
+        navigation = env.env.agent.navigation
+        assert navigation.current_ref_lanes.index(navigation.current_lane) == 0
+        lane_width = navigation.current_lane.width_at(0.0)
+
+        target_d, _target_speed = env.adapter.action_targets("frenet_pid")
+        lateral_grid = target_d.reshape(5, 3)
+
+        np.testing.assert_allclose(lateral_grid[:, 0], -lane_width, atol=1e-5)
+        np.testing.assert_allclose(lateral_grid[:, 1], 0.0, atol=1e-5)
+        np.testing.assert_allclose(lateral_grid[:, 2], lane_width, atol=1e-5)
+    finally:
+        env.close()
 
 
 def test_native_descriptor_starts_in_actual_chassis_heading_not_velocity_heading() -> None:

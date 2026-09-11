@@ -10,6 +10,11 @@ from bdp_benchmark.common.features import encode_ego_local_features
 from bdp_benchmark.common.frenet import FrenetState, ReferencePath, frenet_to_world, generate_frenet_trajectories
 
 
+FRENET_PID_LATERAL_DIM = 3
+FRENET_PID_SPEED_DIM = 5
+FRENET_PID_ACTION_COUNT = FRENET_PID_LATERAL_DIM * FRENET_PID_SPEED_DIM
+
+
 def decode_discrete_action_grid(*, steering_dim: int, throttle_dim: int) -> tuple[np.ndarray, np.ndarray]:
     if steering_dim < 2 or throttle_dim < 2:
         raise ValueError("MetaDrive discrete steering and throttle dimensions must both be at least 2")
@@ -40,8 +45,28 @@ def native_action_targets(
     return target_d, target_speed
 
 
+def frenet_pid_target_grid(
+    *,
+    lane_centers: np.ndarray,
+    current_speed: float,
+    speed_delta_mps: float,
+    minimum_speed_mps: float,
+    maximum_speed_mps: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    lane_centers = np.asarray(lane_centers, dtype=np.float64)
+    if lane_centers.shape != (FRENET_PID_LATERAL_DIM,):
+        raise ValueError(f"lane_centers must have shape ({FRENET_PID_LATERAL_DIM},), got {lane_centers.shape}")
+    speed_levels = np.linspace(-1.0, 1.0, FRENET_PID_SPEED_DIM, dtype=np.float64)
+    speed_targets = np.clip(
+        float(current_speed) + speed_levels * float(speed_delta_mps),
+        float(minimum_speed_mps),
+        float(maximum_speed_mps),
+    )
+    return np.tile(lane_centers, FRENET_PID_SPEED_DIM), np.repeat(speed_targets, FRENET_PID_LATERAL_DIM)
+
+
 class MetaDriveAdapter:
-    SEMANTIC_ACTION_COUNT = 5
+    SEMANTIC_ACTION_COUNT = FRENET_PID_ACTION_COUNT
 
     def __init__(self, env, config: CandidateGenerationConfig) -> None:
         self.env = env
@@ -108,22 +133,39 @@ class MetaDriveAdapter:
                 minimum_speed_mps=self.config.minimum_target_speed_mps,
                 maximum_speed_mps=self.config.maximum_target_speed_mps,
             )
-        lane_width = float(self.lane.width_at(self.lane.local_coordinates(position)[0]))
-        lane_delta = lane_width * self.config.lane_change_width_scale
         speed = float(self.vehicle.speed) if planning_state is None else float(planning_state.speed)
-        target_d = np.asarray(
-            [float(state.d) - lane_delta, float(state.d), float(state.d) + lane_delta, float(state.d), float(state.d)],
-            dtype=np.float64,
+        return frenet_pid_target_grid(
+            lane_centers=self._frenet_pid_lane_centers(position),
+            current_speed=speed,
+            speed_delta_mps=self.config.speed_delta_mps,
+            minimum_speed_mps=self.config.minimum_target_speed_mps,
+            maximum_speed_mps=self.config.maximum_target_speed_mps,
         )
-        target_speed = np.asarray(
-            [speed, speed, speed, speed + self.config.speed_delta_mps, speed - self.config.speed_delta_mps],
-            dtype=np.float64,
+
+    def _frenet_pid_lane_centers(self, position: np.ndarray) -> np.ndarray:
+        lane = self.lane
+        navigation = self.vehicle.navigation
+        reference_lanes = list(navigation.current_ref_lanes or [lane])
+        try:
+            current_index = reference_lanes.index(lane)
+        except ValueError as exc:
+            raise RuntimeError("MetaDrive current lane is not present in navigation.current_ref_lanes") from exc
+
+        longitudinal, _ = lane.local_coordinates(position)
+        lane_width = float(lane.width_at(longitudinal))
+
+        def center_offset(target_lane) -> float:
+            target_longitudinal, _ = target_lane.local_coordinates(position)
+            target_center = target_lane.position(target_longitudinal, 0.0)
+            return float(lane.local_coordinates(target_center)[1])
+
+        left = center_offset(reference_lanes[current_index - 1]) if current_index > 0 else -lane_width
+        right = (
+            center_offset(reference_lanes[current_index + 1])
+            if current_index + 1 < len(reference_lanes)
+            else lane_width
         )
-        return target_d, np.clip(
-            target_speed,
-            self.config.minimum_target_speed_mps,
-            self.config.maximum_target_speed_mps,
-        )
+        return np.asarray([left, 0.0, right], dtype=np.float64)
 
     def _reference_path(self, start_longitudinal: float, required_length: float) -> ReferencePath:
         lane = self.lane

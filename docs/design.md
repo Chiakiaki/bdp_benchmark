@@ -51,10 +51,12 @@ trajectory_execution_mode: native_controller  # native_controller, frenet_pid, o
 trajectory is an action-conditioned descriptor supplied to the BDP scorer, but
 the selected raw action is sent to the simulator unchanged.
 
-`frenet_pid` changes the action MDP. Five semantic actions generate five Frenet
-reference trajectories, and a low-level tracker follows the selected reference
-during the simulator substeps. `frenet_pid_v2` uses the same five-action PID
-executor but changes only the planning origin to a nominal projected state.
+`frenet_pid` changes the action MDP. HighwayEnv generates five semantic Frenet
+references. MetaDrive generates 15 references from three adaptive lane-center
+targets and five target-speed offsets. A low-level tracker follows the selected
+reference during simulator substeps. `frenet_pid_v2` uses the same
+simulator-specific action space but changes only the planning origin to a
+nominal projected state.
 
 ### Policy/candidate representation
 
@@ -77,10 +79,10 @@ Each simulator and execution mode supports these comparisons:
 | Frenet PID v2 | BDP | one-hot semantic intent |
 | Frenet PID v2 | BDP | executable Frenet reference features |
 
-HighwayEnv native mode has five actions. MetaDrive native mode preserves its
-configured steering/throttle grid, which is 5 x 5 and therefore 25 actions by
-default. Frenet PID mode exposes five ordered semantic actions in both
-simulators: `LANE_LEFT`, `IDLE`, `LANE_RIGHT`, `FASTER`, and `SLOWER`.
+HighwayEnv native and Frenet-PID modes have five actions. MetaDrive native mode
+preserves its configured steering/throttle grid, which is 5 x 5 and therefore
+25 actions by default. MetaDrive Frenet-PID modes have 15 actions: three
+lane-center targets change fastest within each of five target-speed rows.
 
 ## Candidate Contract
 
@@ -126,6 +128,14 @@ target_v = current_v + throttle * native_speed_span_mps
 Normalized steering bounds the lateral shift to the configured span, and target
 speed is clipped to configured minimum and maximum values. The selected raw
 action is still executed by MetaDrive's `EnvInputPolicy`.
+
+MetaDrive Frenet-PID replaces the five steering-derived lateral targets with
+three lane-center targets: left adjacent, current, and right adjacent. Existing
+adjacent centers are projected through `navigation.current_ref_lanes`. At a
+boundary, a virtual center is extrapolated by one current-lane width so the
+action space remains fixed. These three targets are paired with five normalized
+speed offsets, producing 15 executable references. `frenet_pid` and
+`frenet_pid_v2` share this action contract.
 
 For actual-state candidate generation, the initial Frenet rates use the direct
 chassis heading and scalar speed. This keeps the visible descriptor aligned
@@ -195,7 +205,7 @@ nearest-point operation in v1, with no window or tracking-error rejection guard.
 - Give all policy variants the same raw action meanings and executor.
 - Do not use future traffic states or collision filtering in candidate creation.
 - Treat the raw MetaDrive environment as a separate reference baseline; its
-  native 25-action MDP is not equivalent to the five-action Frenet PID MDP.
+  native 25-action MDP is not equivalent to the 15-action Frenet PID MDP.
 - Report that BDP Frenet includes structured action geometry. BDP one-hot is the
   ablation that isolates candidate-scoring architecture from that geometry.
 

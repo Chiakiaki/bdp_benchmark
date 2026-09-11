@@ -1,13 +1,12 @@
-# Native MetaDrive BDP-Frenet benchmark paired with
-# metadrive_native_builtin_benchmark.yaml. MetaDrive still executes its native
-# 5x5 steering/throttle action; the Frenet descriptor is candidate input only.
+# Nominal-origin MetaDrive categorical PPO benchmark selecting the same 15
+# lane-center by target-speed Frenet trajectories as frenet_pid.
 runtime:
   run_mode: train
-  run_name: metadrive_native_bdp_frenet_benchmark
+  run_name: metadrive_frenet_pid_v2_builtin_benchmark
 environment:
   simulator: metadrive
   env_id: MetaDrive-v0
-  trajectory_execution_mode: native_controller
+  trajectory_execution_mode: frenet_pid_v2
   environment_config:
     use_render: false
     map: 3
@@ -22,10 +21,9 @@ environment:
 frenet:
   trajectory_horizon_s: 2.0
   trajectory_sample_count: 11
-  native_lateral_span_m: 3.5
-  native_speed_span_mps: 5.0
   position_feature_scale_m: 50.0
   speed_feature_scale_mps: 40.0
+  frenet_speed_delta_mps: 5.0
 algorithm:
   name: PPO
   num_timesteps: 2000000
@@ -42,10 +40,8 @@ algorithm:
   seed: 41
   device: auto
 model_architecture:
-  policy_mode: bdp
+  policy_mode: builtin
   builtin_policy: MlpPolicy
-  candidate_sampler: native_action_frenet
-  candidate_scorer: dot
   policy_layers: [256, 256]
   value_layers: [256, 256]
 logging:

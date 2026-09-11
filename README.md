@@ -7,8 +7,9 @@ The benchmark has two action MDPs:
 
 - `native_controller`: preserve the simulator action and controller. Frenet
   trajectories are structured action descriptors only.
-- `frenet_pid`: select one of five generated Frenet references and execute it
-  through a trajectory tracking controller.
+- `frenet_pid`: select an executable Frenet reference and follow it through a
+  trajectory tracking controller. HighwayEnv exposes five references;
+  MetaDrive exposes a 3 lane-center x 5 target-speed grid.
 - `frenet_pid_v2`: plan from a nominal pose projected onto the previous selected
   trajectory while PID control still follows the reference using the actual pose.
 
@@ -59,9 +60,7 @@ nominal-planning v2 variant:
 | Frenet PID v2 | BDP | `one_hot` |
 | Frenet PID v2 | BDP | `frenet` |
 
-HighwayEnv native mode preserves its five official semantic actions. MetaDrive
-native mode preserves its configured steering/throttle grid, which is 25
-actions for the default 5 x 5 grid. All Frenet-PID modes use this order:
+HighwayEnv native and Frenet-PID modes use the same five semantic actions:
 
 ```text
 0 LANE_LEFT
@@ -71,11 +70,13 @@ actions for the default 5 x 5 grid. All Frenet-PID modes use this order:
 4 SLOWER
 ```
 
-Comparisons are like-for-like only within the same simulator and execution
-mode. The five-action Frenet-PID MetaDrive environment is intentionally not the
-same MDP as raw MetaDrive's 25-action environment. `frenet_pid_v2` preserves
-the legacy action and observation shapes but changes the candidate planning
-origin.
+MetaDrive native mode preserves its default 5 steering x 5 throttle grid. Its
+Frenet-PID modes instead use 15 actions: for each of five target-speed offsets,
+choose the left adjacent, current, or right adjacent lane center. Missing
+boundary lanes are represented by a virtual center one current-lane width away,
+which keeps the action space fixed. Comparisons are like-for-like only within
+the same simulator and execution mode. `frenet_pid_v2` uses the same 15-action
+space as `frenet_pid` but changes the candidate planning origin.
 
 ## Train
 
@@ -86,14 +87,14 @@ cd /home/dell/project/bdp_benchmark
 export PYTHONPATH="/home/dell/project:${PYTHONPATH:-}"
 
 python3 scripts/train.py \
-  --config scripts/job_scripts/highway_native_bdp_frenet.yaml
+  --config scripts/job_scripts/highway_native_bdp_frenet_benchmark.yaml
 ```
 
 MetaDrive example:
 
 ```bash
 python3 scripts/train.py \
-  --config scripts/job_scripts/metadrive_frenet_pid_bdp_frenet.yaml
+  --config scripts/job_scripts/metadrive_frenet_pid_bdp_frenet_benchmark.yaml
 ```
 
 The decision and physics rates remain simulator-owned and can be set inside
@@ -329,6 +330,19 @@ MetaDrive steering is positive to the left while its lane-local lateral value
 is positive to the right, which accounts for the minus sign. These are
 learnable geometric descriptors, not claims of exact future vehicle dynamics.
 The selected native action is still executed unchanged.
+
+In MetaDrive Frenet-PID modes, the shared generator instead receives a 3 x 5
+target grid. Actual adjacent centers are projected through
+`navigation.current_ref_lanes`; at a road boundary, the missing center is
+extrapolated by the current lane width. The five speed rows are:
+
+```text
+current_speed + [-1.0, -0.5, 0.0, 0.5, 1.0] * frenet_speed_delta_mps
+```
+
+Lateral choice changes fastest within each speed row. Structured BDP input is
+`[E, 15, 5*H]`; with `H=11`, this is `[E, 15, 55]`. One-hot BDP input is
+`[E, 15, 15]`.
 
 Native candidate geometry uses the actual chassis heading and scalar speed to
 initialize its Frenet motion direction. This is separate from the simulator's

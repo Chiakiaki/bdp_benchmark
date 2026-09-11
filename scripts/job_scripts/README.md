@@ -10,6 +10,31 @@ metadrive_native_builtin_benchmark.yaml
 metadrive_native_bdp_frenet_benchmark.yaml
 ```
 
+The active MetaDrive Frenet-PID comparisons are:
+
+```text
+metadrive_frenet_pid_builtin_benchmark.yaml
+metadrive_frenet_pid_bdp_frenet_benchmark.yaml
+metadrive_frenet_pid_v2_builtin_benchmark.yaml
+metadrive_frenet_pid_v2_bdp_frenet_benchmark.yaml
+```
+
+Each pair selects the same 15 trajectories: three adaptive lane-center targets
+by five target-speed offsets. `frenet_pid` plans from the actual state;
+`frenet_pid_v2` plans from the projected nominal state while PID execution and
+simulator outcomes remain actual-state based.
+
+Run each matched execution-mode comparison sequentially:
+
+```bash
+./scripts/job_scripts/run_metadrive_bdp_frenet_comparison.sh
+./scripts/job_scripts/run_metadrive_builtin_comparison.sh
+```
+
+The first script compares Frenet-PID v2 with native execution under BDP-Frenet
+scoring. The second makes the same execution-mode comparison under builtin PPO.
+Additional CLI arguments are forwarded to both jobs within each script.
+
 The mixed-road HighwayEnv comparison uses:
 
 ```text

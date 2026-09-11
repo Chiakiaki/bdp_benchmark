@@ -14,6 +14,7 @@ from bdp_benchmark.common.nominal import NominalTrajectoryState
 from bdp_benchmark.common.tracking import TrackerConfig
 
 from .adapter import MetaDriveAdapter
+from .adapter import FRENET_PID_ACTION_COUNT
 from .policy import MetaDriveFrenetPIDPolicy
 
 
@@ -50,7 +51,7 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
         expected_actions = (
             int(self.env.config["discrete_steering_dim"]) * int(self.env.config["discrete_throttle_dim"])
             if execution_mode == "native_controller"
-            else 5
+            else FRENET_PID_ACTION_COUNT
         )
         if not isinstance(self.action_space, gym.spaces.Discrete) or int(self.action_space.n) != expected_actions:
             raise RuntimeError(f"MetaDrive action space does not match expected Discrete({expected_actions}): {self.action_space}")

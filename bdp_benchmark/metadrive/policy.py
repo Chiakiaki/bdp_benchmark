@@ -8,6 +8,7 @@ from metadrive.policy.base_policy import BasePolicy
 
 from bdp_benchmark.common.contracts import EgoState
 from bdp_benchmark.common.tracking import TrackerConfig, TrajectoryPIDTracker
+from bdp_benchmark.metadrive.adapter import FRENET_PID_ACTION_COUNT
 
 
 class MetaDriveFrenetPIDPolicy(BasePolicy):
@@ -17,7 +18,7 @@ class MetaDriveFrenetPIDPolicy(BasePolicy):
 
     @classmethod
     def get_input_space(cls):
-        return spaces.Discrete(5)
+        return spaces.Discrete(FRENET_PID_ACTION_COUNT)
 
     def configure_tracker(self, config: TrackerConfig) -> None:
         self.tracker = TrajectoryPIDTracker(config)

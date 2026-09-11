@@ -21,7 +21,7 @@ METADRIVE_CONFIG = {
 
 @pytest.mark.parametrize(
     ("execution_mode", "expected_actions"),
-    [("native_controller", 25), ("frenet_pid", 5)],
+    [("native_controller", 25), ("frenet_pid", 15), ("frenet_pid_v2", 15)],
 )
 def test_metadrive_modes_build_candidates_and_step_headlessly(execution_mode: str, expected_actions: int) -> None:
     env = MetaDriveBenchmarkEnv(
