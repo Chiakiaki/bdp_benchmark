@@ -91,6 +91,36 @@ def test_frenet_pid_lane_centers_use_navigation_lanes_and_virtual_boundary_lane(
         env.close()
 
 
+def test_frenet_pid_lane_centers_use_current_road_when_route_references_advance_first() -> None:
+    env = MetaDriveBenchmarkEnv(
+        execution_mode="frenet_pid_v2",
+        generation_config=CandidateGenerationConfig(horizon_s=0.5, sample_count=5),
+        tracker_config=TrackerConfig(),
+        env_config={
+            "use_render": False,
+            "traffic_density": 0.0,
+            "random_traffic": False,
+            "num_scenarios": 1,
+            "start_seed": 5000,
+            "map": 3,
+            "horizon": 20,
+            "log_level": 50,
+        },
+    )
+    try:
+        env.reset(seed=5041)
+        navigation = env.env.agent.navigation
+        assert navigation.current_lane not in navigation.next_ref_lanes
+        navigation.current_ref_lanes = navigation.next_ref_lanes
+
+        target_d, _target_speed = env.adapter.action_targets("frenet_pid_v2")
+
+        lane_width = navigation.current_lane.width_at(0.0)
+        np.testing.assert_allclose(target_d.reshape(5, 3)[0], [-lane_width, 0.0, lane_width], atol=1e-5)
+    finally:
+        env.close()
+
+
 def test_native_descriptor_starts_in_actual_chassis_heading_not_velocity_heading() -> None:
     env = MetaDriveBenchmarkEnv(
         execution_mode="native_controller",

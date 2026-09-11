@@ -131,11 +131,13 @@ action is still executed by MetaDrive's `EnvInputPolicy`.
 
 MetaDrive Frenet-PID replaces the five steering-derived lateral targets with
 three lane-center targets: left adjacent, current, and right adjacent. Existing
-adjacent centers are projected through `navigation.current_ref_lanes`. At a
-boundary, a virtual center is extrapolated by one current-lane width so the
-action space remains fixed. These three targets are paired with five normalized
-speed offsets, producing 15 executable references. `frenet_pid` and
-`frenet_pid_v2` share this action contract.
+adjacent centers are obtained from the current lane's road-network peers, not
+the route-reference list, because current localization and route references can
+advance on different frames at a segment transition. At a boundary, a virtual
+center is extrapolated by one current-lane width so the action space remains
+fixed. These three targets are paired with five normalized speed offsets,
+producing 15 executable references. `frenet_pid` and `frenet_pid_v2` share this
+action contract.
 
 For actual-state candidate generation, the initial Frenet rates use the direct
 chassis heading and scalar speed. This keeps the visible descriptor aligned

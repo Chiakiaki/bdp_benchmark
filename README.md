@@ -333,8 +333,10 @@ The selected native action is still executed unchanged.
 
 In MetaDrive Frenet-PID modes, the shared generator instead receives a 3 x 5
 target grid. Actual adjacent centers are projected through
-`navigation.current_ref_lanes`; at a road boundary, the missing center is
-extrapolated by the current lane width. The five speed rows are:
+the peer lanes associated with `navigation.current_lane.index` in MetaDrive's
+road network; at a road boundary, the missing center is extrapolated by the
+current lane width. This remains valid while route-reference lanes are updating
+at a segment transition. The five speed rows are:
 
 ```text
 current_speed + [-1.0, -0.5, 0.0, 0.5, 1.0] * frenet_speed_delta_mps

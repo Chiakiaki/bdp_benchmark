@@ -145,12 +145,6 @@ class MetaDriveAdapter:
     def _frenet_pid_lane_centers(self, position: np.ndarray) -> np.ndarray:
         lane = self.lane
         navigation = self.vehicle.navigation
-        reference_lanes = list(navigation.current_ref_lanes or [lane])
-        try:
-            current_index = reference_lanes.index(lane)
-        except ValueError as exc:
-            raise RuntimeError("MetaDrive current lane is not present in navigation.current_ref_lanes") from exc
-
         longitudinal, _ = lane.local_coordinates(position)
         lane_width = float(lane.width_at(longitudinal))
 
@@ -159,12 +153,19 @@ class MetaDriveAdapter:
             target_center = target_lane.position(target_longitudinal, 0.0)
             return float(lane.local_coordinates(target_center)[1])
 
-        left = center_offset(reference_lanes[current_index - 1]) if current_index > 0 else -lane_width
-        right = (
-            center_offset(reference_lanes[current_index + 1])
-            if current_index + 1 < len(reference_lanes)
-            else lane_width
-        )
+        road_network = navigation.map.road_network
+        lane_index = lane.index
+        peer_lanes = None
+        if isinstance(lane_index, tuple) and len(lane_index) >= 3:
+            from_node, to_node = lane_index[:2]
+            peer_lanes = road_network.graph.get(from_node, {}).get(to_node)
+        if not peer_lanes and hasattr(road_network, "get_peer_lanes_from_index"):
+            peer_lanes = road_network.get_peer_lanes_from_index(lane_index)
+        offsets = [center_offset(peer_lane) for peer_lane in (peer_lanes or [lane])]
+        left_offsets = [offset for offset in offsets if offset < -1e-6]
+        right_offsets = [offset for offset in offsets if offset > 1e-6]
+        left = max(left_offsets) if left_offsets else -lane_width
+        right = min(right_offsets) if right_offsets else lane_width
         return np.asarray([left, 0.0, right], dtype=np.float64)
 
     def _reference_path(self, start_longitudinal: float, required_length: float) -> ReferencePath:
