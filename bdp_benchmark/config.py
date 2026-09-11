@@ -3,14 +3,26 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
+import warnings
 from pathlib import Path
 from typing import Any, Sequence
 
 import yaml
 
 from critic_based_rl.args import add_sb3_bdp_args
+
+
+HIGHWAY_MIXED_OBSERVATION_CONFIG = {
+    "type": "Kinematics",
+    "vehicles_count": 5,
+    "features": ["presence", "x", "y", "vx", "vy"],
+    "normalize": True,
+    "absolute": False,
+    "order": "sorted",
+}
 
 
 def _flatten_sections(config: dict[str, Any]) -> dict[str, Any]:
@@ -37,6 +49,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--run_mode", choices=("train", "evaluate"), default="train")
     parser.add_argument("--visual_check", action="store_true", default=False)
     parser.add_argument(
+        "--visual_check_variant_index",
+        type=int,
+        default=0,
+        help="Mixed-road variant index for a single visual check; wraps modulo the variant count.",
+    )
+    parser.add_argument(
         "--inference_mode",
         choices=("deterministic", "stochastic"),
         default="deterministic",
@@ -46,6 +64,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--resume_model_path", type=str, default=None)
     parser.add_argument("--simulator", choices=("highway", "metadrive"), default="highway")
     parser.add_argument("--env_id", type=str, default="highway-fast-v0")
+    parser.add_argument(
+        "--environment_variants",
+        nargs="+",
+        default=[],
+        help="HighwayEnv IDs assigned to vector workers in fixed round-robin order.",
+    )
     parser.add_argument(
         "--trajectory_execution_mode",
         choices=("native_controller", "frenet_pid", "frenet_pid_v2"),
@@ -117,6 +141,41 @@ def validate_args(args: argparse.Namespace) -> argparse.Namespace:
         raise ValueError("maximum_target_speed_mps must exceed minimum_target_speed_mps")
     if args.n_envs < 1:
         raise ValueError("n_envs must be at least 1")
+    variants = [str(value).strip() for value in args.environment_variants]
+    if any(not value for value in variants):
+        raise ValueError("environment_variants must not contain empty IDs")
+    if len(set(variants)) != len(variants):
+        raise ValueError("environment_variants must not contain duplicates")
+    args.environment_variants = variants
+    if args.visual_check_variant_index < 0:
+        raise ValueError("visual_check_variant_index must be non-negative")
+    if args.visual_check_variant_index != 0 and not args.visual_check:
+        raise ValueError("visual_check_variant_index only applies to --visual_check")
+    if args.visual_check_variant_index != 0 and not variants:
+        raise ValueError("nonzero visual_check_variant_index requires environment_variants")
+    if variants:
+        if args.simulator != "highway":
+            raise ValueError("environment_variants is HighwayEnv-only")
+        observation_override = dict(args.environment_config.get("observation") or {})
+        observation_config = {**HIGHWAY_MIXED_OBSERVATION_CONFIG, **observation_override}
+        if observation_config != HIGHWAY_MIXED_OBSERVATION_CONFIG:
+            raise ValueError(
+                "environment_variants requires the shared ego-relative observation contract: "
+                f"{HIGHWAY_MIXED_OBSERVATION_CONFIG}"
+            )
+        args.environment_config["observation"] = copy.deepcopy(HIGHWAY_MIXED_OBSERVATION_CONFIG)
+        if args.run_mode == "train" and args.n_envs < len(variants):
+            raise ValueError(
+                "mixed-road training requires at least one worker per variant: "
+                f"n_envs={args.n_envs}, variants={len(variants)}"
+            )
+        if args.run_mode == "train" and args.n_envs % len(variants) != 0:
+            warnings.warn(
+                f"n_envs={args.n_envs} is not divisible by {len(variants)} environment variants; "
+                "earlier variants receive one extra worker.",
+                UserWarning,
+                stacklevel=2,
+            )
     if args.simulator == "metadrive" and args.n_envs > 1 and args.vec_env != "subproc":
         raise ValueError("MetaDrive with n_envs > 1 requires vec_env=subproc")
     if args.policy_mode == "bdp":
@@ -165,7 +224,8 @@ def parse_args(argv: Sequence[str] | None = None, *, validate: bool = True) -> a
         parser.set_defaults(**defaults)
     args = parser.parse_args(argv)
     args.num_timesteps = int(args.num_timesteps)
-    args.environment_config = dict(args.environment_config or {})
+    args.environment_config = copy.deepcopy(dict(args.environment_config or {}))
+    args.environment_variants = list(args.environment_variants or [])
     args.dwb_stop_candidate_index = -1
     if args.simulator == "metadrive" and args.env_id == "highway-fast-v0":
         args.env_id = "MetaDrive-v0"
@@ -195,11 +255,13 @@ def resolved_config(args: argparse.Namespace) -> dict[str, Any]:
             "run_mode": args.run_mode,
             "run_name": args.run_name,
             "visual_check": args.visual_check,
+            "visual_check_variant_index": args.visual_check_variant_index,
             "inference_mode": args.inference_mode,
         },
         "environment": {
             "simulator": args.simulator,
             "env_id": args.env_id,
+            "environment_variants": list(args.environment_variants),
             "trajectory_execution_mode": args.trajectory_execution_mode,
             "environment_config": dict(args.environment_config),
         },

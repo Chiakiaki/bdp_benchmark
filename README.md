@@ -136,6 +136,80 @@ python3 scripts/train.py \
   --save_freq 0
 ```
 
+### Mixed HighwayEnv roads
+
+One HighwayEnv checkpoint can collect rollouts from Highway, Merge, and
+Roundabout concurrently:
+
+```yaml
+environment:
+  simulator: highway
+  environment_variants:
+    - highway-fast-v0
+    - merge-v1
+    - roundabout-v1
+  environment_config:
+    observation:
+      type: Kinematics
+      vehicles_count: 5
+      features: [presence, x, y, vx, vy]
+      normalize: true
+      absolute: false
+      order: sorted
+```
+
+Worker rank selects a variant using `rank % len(environment_variants)`, and the
+selected road remains fixed for that worker across resets. Omitting
+`environment_variants` preserves the existing single-`env_id` behavior. Mixed
+training requires at least one worker per variant and warns when workers cannot
+be divided evenly. The parser enforces the shared ego-relative observation
+contract, and the factory validates final wrapped spaces before subprocesses
+start.
+
+The reproducible builtin and BDP jobs are:
+
+```text
+scripts/job_scripts/highway_mixed_native_builtin_benchmark.yaml
+scripts/job_scripts/highway_mixed_native_bdp_frenet_benchmark.yaml
+```
+
+Per-environment Monitor CSVs are grouped below `monitor/<variant>/`. Non-visual
+mixed evaluation starts one worker per variant and interprets
+`evaluate_episodes` as the number of episodes for each road. A visual check
+remains single-environment and uses the first configured variant.
+
+### Reward comparison plots
+
+`scripts/plot_rewards.py` recursively reads every
+`monitor/<variant>/rank_<N>/*.monitor.csv` file. Its default `combined` mode
+pools all completed episodes from every worker and road into one
+episode-weighted curve per run:
+
+```bash
+python3 scripts/plot_rewards.py \
+  --runs logs/benchmark/<bdp-frenet-run> \
+         logs/benchmark/<builtin-run> \
+         logs/benchmark/<bdp-one-hot-run> \
+  --labels "BDP Frenet" "Builtin PPO" "BDP One-Hot" \
+  --curve_mode combined \
+  --window_size 100 \
+  --output logs/benchmark/highway_mixed_10hz_rewards.png
+```
+
+Use `--curve_mode per_variant` with the same arguments to create one comparison
+PNG for each road. Given the output above, the generated names are:
+
+```text
+highway_mixed_10hz_rewards_highway-fast-v0.png
+highway_mixed_10hz_rewards_merge-v1.png
+highway_mixed_10hz_rewards_roundabout-v1.png
+```
+
+Combined mode weights each completed episode equally, matching the existing
+`critic_based_rl.plotting` behavior. Per-variant mode pools only the parallel
+workers assigned to that road. Both modes sort episode completions by monitor
+time and use cumulative episode lengths as aggregate environment timesteps.
+
 Each run stores:
 
 ```text
@@ -170,6 +244,22 @@ global.
 candidate set. It forces one environment and dummy vectorization, and defaults
 to deterministic selection. Use `--inference_mode stochastic` to inspect
 sampled actions instead.
+
+For a mixed HighwayEnv job, `--visual_check_variant_index` chooses which fixed
+road to render. The non-negative index wraps modulo the configured variant
+count, so index `4` selects `merge-v1` from the three-road list:
+
+```bash
+python3 scripts/evaluate.py \
+  --config scripts/job_scripts/highway_mixed_native_bdp_frenet_benchmark.yaml \
+  --visual_check \
+  --visual_check_variant_index 4 \
+  --model_path /path/to/PPO_BDP_final_model.zip
+```
+
+The default index is `0`, which preserves the original first-variant behavior.
+The selected requested index, resolved index, and environment ID are printed
+before evaluation starts.
 
 HighwayEnv example:
 

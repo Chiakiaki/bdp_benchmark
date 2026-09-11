@@ -40,6 +40,7 @@ class HighwayBenchmarkEnv(gym.Wrapper):
         if execution_mode in ("frenet_pid", "frenet_pid_v2") and int(self.action_space.n) != 5:
             raise ValueError("Highway Frenet PID mode requires the five-action DiscreteMetaAction space")
         self.execution_mode = execution_mode
+        self.environment_variant = env_id
         self.adapter = HighwayAdapter(self.env, generation_config)
         self.tracker = TrajectoryPIDTracker(tracker_config)
         self._latest_candidates: CandidateSet | None = None
@@ -90,7 +91,7 @@ class HighwayBenchmarkEnv(gym.Wrapper):
         action_idx = int(action)
         if self.execution_mode == "native_controller":
             self._latest_candidates = None
-            return self.env.step(action_idx)
+            return self._with_environment_variant(self.env.step(action_idx))
         candidate_set = self._latest_candidates or self.build_candidate_set()
         if action_idx < 0 or action_idx >= candidate_set.trajectories.shape[0]:
             raise ValueError(f"Invalid candidate action {action_idx}")
@@ -98,7 +99,13 @@ class HighwayBenchmarkEnv(gym.Wrapper):
             self._nominal_state.commit(candidate_set.trajectories[action_idx])
         self.tracker.set_reference(candidate_set.trajectories[action_idx])
         self._latest_candidates = None
-        return self._step_frenet_pid(action_idx)
+        return self._with_environment_variant(self._step_frenet_pid(action_idx))
+
+    def _with_environment_variant(self, result):
+        obs, reward, terminated, truncated, info = result
+        info = dict(info)
+        info["environment_variant"] = self.environment_variant
+        return obs, reward, terminated, truncated, info
 
     def _step_frenet_pid(self, action: int):
         raw = self.env.unwrapped

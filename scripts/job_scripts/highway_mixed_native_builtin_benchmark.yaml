@@ -1,0 +1,51 @@
+# Mixed-road native HighwayEnv PPO benchmark. Each subprocess keeps one fixed
+# road family, assigned in round-robin order from environment_variants.
+runtime:
+  run_mode: train
+  run_name: highway_mixed_native_builtin_benchmark
+environment:
+  simulator: highway
+  environment_variants:
+    - highway-fast-v0
+    - merge-v1
+    - roundabout-v1
+  trajectory_execution_mode: native_controller
+  environment_config:
+    observation:
+      type: Kinematics
+      vehicles_count: 5
+      features: [presence, x, y, vx, vy]
+      normalize: true
+      absolute: false
+      order: sorted
+frenet:
+  trajectory_horizon_s: 2.0
+  trajectory_sample_count: 11
+  position_feature_scale_m: 50.0
+  speed_feature_scale_mps: 40.0
+algorithm:
+  name: PPO
+  num_timesteps: 2000000
+  learning_rate: 5.0e-4
+  schedule: fixed
+  trpo_timesteps_per_batch: 128
+  batch_size: 64
+  ppo_epochs: 10
+  gamma: 0.80
+  gae_lambda: 0.95
+  target_kl: null
+  n_envs: 12
+  vec_env: subproc
+  seed: 41
+  device: auto
+model_architecture:
+  policy_mode: builtin
+  builtin_policy: MlpPolicy
+  policy_layers: [256, 256]
+  value_layers: [256, 256]
+logging:
+  log_path: logs/benchmark
+  log_interval: 10
+  save_freq: 200000
+  eval_freq: 0
+  monitor_mode: env

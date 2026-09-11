@@ -89,10 +89,12 @@ def test_native_descriptor_starts_in_actual_chassis_heading_not_velocity_heading
     assert state.d_dot == pytest.approx(8.0 * np.sin(0.8))
 
 
-def test_highway_frenet_pid_mode_steps_with_original_observation_and_reward_contract() -> None:
-    env = _make_env(execution_mode="frenet_pid")
+@pytest.mark.parametrize("execution_mode", ["native_controller", "frenet_pid", "frenet_pid_v2"])
+def test_highway_steps_report_environment_variant(execution_mode: str) -> None:
+    env = _make_env(execution_mode=execution_mode)
     try:
-        assert env._nominal_state is None
+        if execution_mode == "frenet_pid":
+            assert env._nominal_state is None
         obs, _ = env.reset(seed=10)
         next_obs, reward, terminated, truncated, info = env.step(1)
 
@@ -100,7 +102,7 @@ def test_highway_frenet_pid_mode_steps_with_original_observation_and_reward_cont
         assert np.isfinite(reward)
         assert isinstance(terminated, bool)
         assert isinstance(truncated, bool)
-        assert isinstance(info, dict)
+        assert info["environment_variant"] == "highway-fast-v0"
     finally:
         env.close()
 
@@ -163,5 +165,27 @@ def test_highway_adapter_is_shared_by_other_five_action_environments(env_id: str
         assert np.isfinite(reward)
         assert isinstance(terminated, bool)
         assert isinstance(truncated, bool)
+    finally:
+        env.close()
+
+
+def test_roundabout_reference_clamps_route_lane_id_at_single_lane_exit() -> None:
+    env = HighwayBenchmarkEnv(
+        env_id="roundabout-v1",
+        execution_mode="native_controller",
+        generation_config=CandidateGenerationConfig(horizon_s=2.0, sample_count=11),
+        tracker_config=TrackerConfig(),
+    )
+    try:
+        env.reset(seed=42)
+        for _ in range(7):
+            env.build_candidate_set()
+            _obs, _reward, terminated, truncated, _info = env.step(1)
+            assert not terminated
+            assert not truncated
+
+        candidates = env.build_candidate_set()
+        assert candidates.features.shape == (5, 55)
+        assert np.all(np.isfinite(candidates.features))
     finally:
         env.close()

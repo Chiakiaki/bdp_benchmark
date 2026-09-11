@@ -116,6 +116,14 @@ class HighwayAdapter:
             route.insert(0, lane_index)
         else:
             route[0] = lane_index
+        preferred_lane_id = int(lane_index[2])
+        resolved_route = []
+        for from_node, to_node, route_lane_id in route:
+            lane_count = len(self.raw.road.network.graph[from_node][to_node])
+            requested_id = preferred_lane_id if route_lane_id is None else int(route_lane_id)
+            resolved_id = int(np.clip(requested_id, 0, lane_count - 1))
+            resolved_route.append((from_node, to_node, resolved_id))
+        route = resolved_route
         sample_count = max(64, self.config.sample_count * 6)
         offsets = np.linspace(0.0, max(float(required_length), 1.0), sample_count)
         points = [

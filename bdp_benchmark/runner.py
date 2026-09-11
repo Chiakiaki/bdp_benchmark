@@ -91,6 +91,37 @@ def run_training(args) -> Path:
     return log_dir
 
 
+def collect_evaluation_returns(
+    model,
+    env,
+    *,
+    args,
+    variant_ids: list[str],
+    episodes_per_variant: int,
+) -> dict[str, list[float]]:
+    if len(variant_ids) != env.num_envs:
+        raise ValueError(
+            f"Evaluation variant count {len(variant_ids)} does not match env.num_envs={env.num_envs}"
+        )
+    returns_by_variant = {variant: [] for variant in dict.fromkeys(variant_ids)}
+    running_return = np.zeros(env.num_envs, dtype=np.float64)
+    obs = env.reset()
+    while any(len(values) < episodes_per_variant for values in returns_by_variant.values()):
+        action, _ = model.predict(obs, deterministic=args.inference_mode == "deterministic")
+        obs, rewards, dones, infos = env.step(action)
+        running_return += rewards
+        for env_idx, done in enumerate(dones):
+            if not done:
+                continue
+            variant = str(infos[env_idx].get("environment_variant", variant_ids[env_idx]))
+            if variant not in returns_by_variant:
+                raise ValueError(f"Evaluation worker reported unexpected environment variant: {variant}")
+            if len(returns_by_variant[variant]) < episodes_per_variant:
+                returns_by_variant[variant].append(float(running_return[env_idx]))
+            running_return[env_idx] = 0.0
+    return returns_by_variant
+
+
 def run_evaluation(args) -> list[float]:
     if not args.model_path:
         raise ValueError("--model_path is required for evaluation")
@@ -100,22 +131,24 @@ def run_evaluation(args) -> list[float]:
     log_dir.mkdir(parents=True, exist_ok=True)
     env = make_vector_env(args, log_dir=log_dir, is_train=False)
     model = get_algorithm_class(args.sb3_algorithm).load(args.model_path, env=env, device=args.device)
-    returns: list[float] = []
-    running_return = np.zeros(env.num_envs, dtype=np.float64)
-    obs = env.reset()
+    configured_variants = list(getattr(args, "environment_variants", ()) or ())
+    variant_ids = configured_variants if configured_variants else [str(args.env_id)]
     try:
-        while len(returns) < int(args.evaluate_episodes):
-            action, _ = model.predict(obs, deterministic=args.inference_mode == "deterministic")
-            obs, rewards, dones, _ = env.step(action)
-            running_return += rewards
-            for env_idx, done in enumerate(dones):
-                if done:
-                    returns.append(float(running_return[env_idx]))
-                    running_return[env_idx] = 0.0
-                    if len(returns) >= int(args.evaluate_episodes):
-                        break
+        returns_by_variant = collect_evaluation_returns(
+            model,
+            env,
+            args=args,
+            variant_ids=variant_ids,
+            episodes_per_variant=int(args.evaluate_episodes),
+        )
     finally:
         env.close()
+    returns = [value for variant_returns in returns_by_variant.values() for value in variant_returns]
+    for variant, variant_returns in returns_by_variant.items():
+        print(
+            f"variant={variant} episodes={len(variant_returns)} "
+            f"mean_return={np.mean(variant_returns):.6f} std_return={np.std(variant_returns):.6f}"
+        )
     print(f"episodes={len(returns)} mean_return={np.mean(returns):.6f} std_return={np.std(returns):.6f}")
     return returns
 

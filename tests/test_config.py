@@ -101,6 +101,8 @@ def test_visual_check_sets_single_rendered_deterministic_evaluation_defaults() -
     assert args.vec_env == "dummy"
     assert args.render_mode == "human"
     assert args.inference_mode == "deterministic"
+    assert args.visual_check_variant_index == 0
+    assert resolved_config(args)["runtime"]["visual_check_variant_index"] == 0
 
 
 def test_visual_check_preserves_explicit_stochastic_mode() -> None:
@@ -138,3 +140,182 @@ def test_frenet_pid_v2_is_an_explicit_supported_execution_mode() -> None:
     )
 
     assert args.trajectory_execution_mode == "frenet_pid_v2"
+
+
+def test_highway_environment_variants_use_shared_ego_relative_observation(tmp_path: Path) -> None:
+    config_path = tmp_path / "mixed.yaml"
+    config_path.write_text(
+        """
+environment:
+  simulator: highway
+  environment_variants:
+    - highway-fast-v0
+    - merge-v1
+    - roundabout-v1
+algorithm:
+  n_envs: 6
+  vec_env: subproc
+""",
+        encoding="utf-8",
+    )
+
+    args = parse_args(["--config", str(config_path)])
+
+    assert args.environment_variants == ["highway-fast-v0", "merge-v1", "roundabout-v1"]
+    assert args.environment_config["observation"] == {
+        "type": "Kinematics",
+        "vehicles_count": 5,
+        "features": ["presence", "x", "y", "vx", "vy"],
+        "normalize": True,
+        "absolute": False,
+        "order": "sorted",
+    }
+    assert resolved_config(args)["environment"]["environment_variants"] == args.environment_variants
+
+
+def test_cli_environment_variants_override_yaml(tmp_path: Path) -> None:
+    config_path = tmp_path / "mixed.yaml"
+    config_path.write_text(
+        """
+environment:
+  simulator: highway
+  environment_variants: [highway-fast-v0, merge-v1, roundabout-v1]
+algorithm:
+  n_envs: 6
+""",
+        encoding="utf-8",
+    )
+
+    args = parse_args(
+        [
+            "--config",
+            str(config_path),
+            "--environment_variants",
+            "merge-v1",
+            "roundabout-v1",
+        ]
+    )
+
+    assert args.environment_variants == ["merge-v1", "roundabout-v1"]
+
+
+def test_omitted_environment_variants_preserve_single_environment_behavior() -> None:
+    args = parse_args([])
+
+    assert args.env_id == "highway-fast-v0"
+    assert args.environment_variants == []
+    assert args.environment_config == {}
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (
+            ["--simulator", "metadrive", "--environment_variants", "MetaDrive-v0"],
+            "HighwayEnv-only",
+        ),
+        (
+            ["--environment_variants", "merge-v1", "merge-v1", "--n_envs", "2"],
+            "must not contain duplicates",
+        ),
+        (
+            [
+                "--environment_variants",
+                "highway-fast-v0",
+                "merge-v1",
+                "roundabout-v1",
+                "--n_envs",
+                "2",
+            ],
+            "at least one worker per variant",
+        ),
+        (
+            [
+                "--environment_variants",
+                "highway-fast-v0",
+                "merge-v1",
+                "roundabout-v1",
+                "--n_envs",
+                "3",
+                "--environment_config",
+                '{"observation":{"type":"Kinematics","absolute":true}}',
+            ],
+            "shared ego-relative observation contract",
+        ),
+    ],
+)
+def test_environment_variants_reject_invalid_configuration(argv: list[str], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        parse_args(argv)
+
+
+def test_environment_variants_allow_single_worker_evaluation() -> None:
+    args = parse_args(
+        [
+            "--run_mode",
+            "evaluate",
+            "--environment_variants",
+            "highway-fast-v0",
+            "merge-v1",
+            "roundabout-v1",
+            "--n_envs",
+            "1",
+        ]
+    )
+
+    assert args.n_envs == 1
+
+
+def test_environment_variants_warn_about_uneven_training_assignment() -> None:
+    with pytest.warns(UserWarning, match="not divisible"):
+        args = parse_args(
+            [
+                "--environment_variants",
+                "highway-fast-v0",
+                "merge-v1",
+                "roundabout-v1",
+                "--n_envs",
+                "4",
+            ]
+        )
+
+    assert args.n_envs == 4
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (
+            [
+                "--visual_check",
+                "--environment_variants",
+                "highway-fast-v0",
+                "merge-v1",
+                "roundabout-v1",
+                "--visual_check_variant_index",
+                "-1",
+            ],
+            "non-negative",
+        ),
+        (
+            ["--visual_check", "--visual_check_variant_index", "4"],
+            "requires environment_variants",
+        ),
+        (
+            [
+                "--environment_variants",
+                "highway-fast-v0",
+                "merge-v1",
+                "roundabout-v1",
+                "--n_envs",
+                "3",
+                "--visual_check_variant_index",
+                "4",
+            ],
+            "only applies to --visual_check",
+        ),
+    ],
+)
+def test_visual_check_variant_index_rejects_invalid_use(argv: list[str], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        parse_args(argv)
