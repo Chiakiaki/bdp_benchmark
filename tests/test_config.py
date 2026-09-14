@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from bdp_benchmark.config import parse_args, resolved_config, validate_args
+from bdp_benchmark.env_factory import tracker_config_from_args
 
 
 def test_cli_overrides_yaml_and_is_reflected_in_resolved_config(tmp_path: Path) -> None:
@@ -79,6 +80,43 @@ def test_config_rejects_invalid_horizon_sampling() -> None:
 def test_resolved_config_is_yaml_serializable() -> None:
     config = resolved_config(parse_args([]))
     assert yaml.safe_load(yaml.safe_dump(config)) == config
+
+
+def test_pid_steering_defaults_preserve_existing_behavior() -> None:
+    args = parse_args([])
+
+    assert args.pid_steering_error_mode == "combined"
+    assert args.pid_integral_reset_on_reference_change is True
+    assert resolved_config(args)["pid"]["pid_steering_error_mode"] == "combined"
+    assert resolved_config(args)["pid"]["pid_integral_reset_on_reference_change"] is True
+
+
+def test_pid_steering_yaml_and_cli_values_reach_tracker_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "pid.yaml"
+    config_path.write_text(
+        """
+pid:
+  pid_steering_error_mode: lateral_only
+  pid_integral_reset_on_reference_change: true
+""",
+        encoding="utf-8",
+    )
+
+    args = parse_args(
+        [
+            "--config",
+            str(config_path),
+            "--pid_steering_error_mode",
+            "heading_only",
+            "--no-pid_integral_reset_on_reference_change",
+        ]
+    )
+    tracker_config = tracker_config_from_args(args)
+
+    assert tracker_config.steering_error_mode == "heading_only"
+    assert tracker_config.integral_reset_on_reference_change is False
+    assert resolved_config(args)["pid"]["pid_steering_error_mode"] == "heading_only"
+    assert resolved_config(args)["pid"]["pid_integral_reset_on_reference_change"] is False
 
 
 def test_all_reproducible_job_configs_parse() -> None:

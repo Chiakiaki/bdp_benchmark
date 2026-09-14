@@ -12,6 +12,7 @@ from typing import Any, Sequence
 
 import yaml
 
+from bdp_benchmark.common.tracking import STEERING_ERROR_MODES
 from critic_based_rl.args import add_sb3_bdp_args
 
 
@@ -92,6 +93,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--frenet_lane_change_width_scale", type=float, default=1.0)
     parser.add_argument("--frenet_speed_delta_mps", type=float, default=5.0)
     parser.add_argument("--pid_lookahead_points", type=int, default=2)
+    parser.add_argument(
+        "--pid_steering_error_mode",
+        choices=STEERING_ERROR_MODES,
+        default="combined",
+        help="Steering PID error source; combined preserves the existing heading-plus-cross-track behavior.",
+    )
+    parser.add_argument(
+        "--pid_integral_reset_on_reference_change",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Reset PID integrals when replacing a trajectory; derivative history always resets.",
+    )
     parser.add_argument("--pid_heading_kp", type=float, default=1.2)
     parser.add_argument("--pid_heading_ki", type=float, default=0.0)
     parser.add_argument("--pid_heading_kd", type=float, default=0.08)
@@ -281,6 +294,8 @@ def resolved_config(args: argparse.Namespace) -> dict[str, Any]:
             key: getattr(args, key)
             for key in (
                 "pid_lookahead_points",
+                "pid_steering_error_mode",
+                "pid_integral_reset_on_reference_change",
                 "pid_heading_kp",
                 "pid_heading_ki",
                 "pid_heading_kd",

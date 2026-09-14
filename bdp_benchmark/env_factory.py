@@ -35,6 +35,8 @@ def generation_config_from_args(args) -> CandidateGenerationConfig:
 def tracker_config_from_args(args) -> TrackerConfig:
     return TrackerConfig(
         lookahead_points=int(args.pid_lookahead_points),
+        steering_error_mode=str(args.pid_steering_error_mode),
+        integral_reset_on_reference_change=bool(args.pid_integral_reset_on_reference_change),
         heading_kp=float(args.pid_heading_kp),
         heading_ki=float(args.pid_heading_ki),
         heading_kd=float(args.pid_heading_kd),

@@ -10,9 +10,19 @@ from .contracts import EgoState, PhysicalControl
 from .features import wrap_angle
 
 
+STEERING_ERROR_MODES = (
+    "combined",
+    "lateral_only",
+    "lateral_only_no_speed_normalization",
+    "heading_only",
+)
+
+
 @dataclass(frozen=True)
 class TrackerConfig:
     lookahead_points: int = 2
+    steering_error_mode: str = "combined"
+    integral_reset_on_reference_change: bool = True
     heading_kp: float = 1.2
     heading_ki: float = 0.0
     heading_kd: float = 0.08
@@ -27,6 +37,10 @@ class TrackerConfig:
     def __post_init__(self) -> None:
         if self.lookahead_points < 0:
             raise ValueError("lookahead_points must be non-negative")
+        if self.steering_error_mode not in STEERING_ERROR_MODES:
+            raise ValueError(
+                f"steering_error_mode must be one of {STEERING_ERROR_MODES}, got {self.steering_error_mode!r}"
+            )
         if self.max_steering_rad <= 0.0 or self.max_accel_mps2 <= 0.0 or self.max_decel_mps2 <= 0.0:
             raise ValueError("tracker limits must be positive")
 
@@ -41,6 +55,9 @@ class _PID:
 
     def reset(self) -> None:
         self.integral = 0.0
+        self.reset_derivative()
+
+    def reset_derivative(self) -> None:
         self.previous_error = None
 
     def step(self, error: float, dt: float) -> float:
@@ -75,8 +92,11 @@ class TrajectoryPIDTracker:
         self.reference = reference.copy()
         self.last_target_index = None
         self.last_target_point = None
-        self._steering_pid.reset()
-        self._speed_pid.reset()
+        for controller in (self._steering_pid, self._speed_pid):
+            if self.config.integral_reset_on_reference_change:
+                controller.reset()
+            else:
+                controller.reset_derivative()
 
     def _target(self, ego: EgoState) -> tuple[int, np.ndarray]:
         if self.reference is None:
@@ -91,6 +111,19 @@ class TrajectoryPIDTracker:
         _target_index, target = self._target(ego)
         return target[:2].copy()
 
+    def _steering_error(self, *, lateral_error: float, heading_error: float, speed: float) -> float:
+        mode = self.config.steering_error_mode
+        if mode == "heading_only":
+            return heading_error
+        if mode == "lateral_only_no_speed_normalization":
+            return self.config.cross_track_kp * lateral_error
+        cross_track_angle = float(
+            np.arctan2(self.config.cross_track_kp * lateral_error, max(abs(speed), 0.5))
+        )
+        if mode == "lateral_only":
+            return cross_track_angle
+        return heading_error + cross_track_angle
+
     def step(self, ego: EgoState, *, dt: float) -> PhysicalControl:
         target_idx, target = self._target(ego)
         self.last_target_index = target_idx
@@ -98,8 +131,11 @@ class TrajectoryPIDTracker:
         target_delta = target[:2] - ego.xy
         left_error = -np.sin(ego.heading) * target_delta[0] + np.cos(ego.heading) * target_delta[1]
         heading_error = float(wrap_angle(target[2] - ego.heading))
-        cross_track_angle = np.arctan2(self.config.cross_track_kp * left_error, max(abs(ego.speed), 0.5))
-        steering_error = heading_error + float(cross_track_angle)
+        steering_error = self._steering_error(
+            lateral_error=float(left_error),
+            heading_error=heading_error,
+            speed=float(ego.speed),
+        )
         steering = np.clip(
             self._steering_pid.step(steering_error, dt),
             -self.config.max_steering_rad,

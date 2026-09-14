@@ -115,7 +115,23 @@ environment_config:
 ```
 
 In Frenet-PID mode, one high-level action selects a trajectory at each
-`env.step()`, while the tracker runs at every internal physics/controller tick.
+`env.step()`. HighwayEnv reevaluates the tracker at each internal simulation
+frame. MetaDrive evaluates it once per environment decision and holds that
+steering/throttle command for its configured `decision_repeat` physics steps.
+
+The shared tracker exposes two lateral-control experiment settings:
+
+```yaml
+pid:
+  pid_steering_error_mode: combined # combined, lateral_only, lateral_only_no_speed_normalization, heading_only
+  pid_integral_reset_on_reference_change: true # False preserves integral state; derivative state always resets
+```
+
+`lateral_only` retains the current speed-normalized cross-track angle.
+`lateral_only_no_speed_normalization` instead sends
+`pid_cross_track_kp * lateral_error` to the steering PID. Full episode reset
+always clears both integral and derivative state. These settings affect only
+Frenet-PID execution; native-controller modes do not use this tracker.
 
 In `frenet_pid_v2`, reset initializes `x_nominal = x_actual`. After an action
 is selected, the next planning pose is the nearest point on that previous
