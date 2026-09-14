@@ -4,6 +4,8 @@ environment:
   trajectory_execution_mode: native_controller
   environment_config:
     use_render: false
+    out_of_route_done: true
+    on_continuous_line_done: false
     map: 3
     traffic_density: 0.1
     num_scenarios: 1000

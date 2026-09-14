@@ -2,13 +2,23 @@
 # the same 15 trajectories; this job supplies their geometry to the dot scorer.
 runtime:
   run_mode: train
-  run_name: metadrive_frenet_pid_bdp_frenet_benchmark
+  run_name: metadrive_frenet_pid_bdp_frenet_12mps_benchmark
 environment:
   simulator: metadrive
   env_id: MetaDrive-v0
   trajectory_execution_mode: frenet_pid
   environment_config:
     use_render: false
+    out_of_route_done: true
+    on_continuous_line_done: false
+    vehicle_config:
+      lidar:
+        num_others: 4
+    agent_configs:
+      default_agent:
+        use_special_color: true
+        spawn_lane_index: [">", ">>", 0]
+        max_speed_km_h: 43.2
     map: 3
     traffic_density: 0.1
     random_traffic: false
@@ -24,7 +34,22 @@ frenet:
   trajectory_sample_count: 11
   position_feature_scale_m: 50.0
   speed_feature_scale_mps: 40.0
-  frenet_speed_delta_mps: 5.0
+  frenet_speed_delta_mps: 2.5
+  maximum_target_speed_mps: 12.0
+pid:
+  pid_lookahead_points: 2
+  pid_steering_error_mode: lateral_only
+  pid_integral_reset_on_reference_change: false
+  pid_heading_kp: 1.2
+  pid_heading_ki: 0.0
+  pid_heading_kd: 0.08
+  pid_cross_track_kp: 0.35
+  pid_speed_kp: 1.0
+  pid_speed_ki: 0.05
+  pid_speed_kd: 0.0
+  pid_max_steering_rad: 0.7
+  pid_max_accel_mps2: 5.0
+  pid_max_decel_mps2: 8.0
 algorithm:
   name: PPO
   num_timesteps: 2000000

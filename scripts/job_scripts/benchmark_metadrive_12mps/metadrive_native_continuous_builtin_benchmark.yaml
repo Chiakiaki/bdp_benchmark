@@ -1,14 +1,27 @@
-# Nominal-origin MetaDrive categorical PPO benchmark selecting the same 15
-# lane-center by target-speed Frenet trajectories as frenet_pid.
+# Native MetaDrive 12 m/s continuous-control PPO reference.
+# MetaDrive's paper PPO baseline uses an 8000-sample train batch, minibatch 100,
+# 20 epochs, lr=5e-5, gamma=0.99, lambda=0.95, and clip=0.2. Eight workers keep
+# that aggregate batch on this host via 1000 steps per environment.
 runtime:
   run_mode: train
-  run_name: metadrive_frenet_pid_v2_builtin_benchmark
+  run_name: metadrive_native_continuous_builtin_12mps_benchmark
 environment:
   simulator: metadrive
   env_id: MetaDrive-v0
-  trajectory_execution_mode: frenet_pid_v2
+  trajectory_execution_mode: native_controller
   environment_config:
     use_render: false
+    discrete_action: false
+    out_of_route_done: true
+    on_continuous_line_done: false
+    vehicle_config:
+      lidar:
+        num_others: 4
+    agent_configs:
+      default_agent:
+        use_special_color: true
+        spawn_lane_index: [">", ">>", 0]
+        max_speed_km_h: 43.2
     map: 3
     traffic_density: 0.1
     random_traffic: false
@@ -19,12 +32,6 @@ environment:
     physics_world_step_size: 0.02
     decision_repeat: 5
     log_level: 50
-frenet:
-  trajectory_horizon_s: 2.0
-  trajectory_sample_count: 11
-  position_feature_scale_m: 50.0
-  speed_feature_scale_mps: 40.0
-  frenet_speed_delta_mps: 5.0
 algorithm:
   name: PPO
   num_timesteps: 2000000

@@ -8,6 +8,8 @@ import yaml
 
 
 JOB_ROOT = Path(__file__).resolve().parents[1] / "scripts" / "job_scripts"
+METADRIVE_BENCHMARK_JOB_ROOT = JOB_ROOT / "benchmark"
+METADRIVE_12MPS_JOB_ROOT = JOB_ROOT / "benchmark_metadrive_12mps"
 
 
 def test_highway_mixed_comparison_launcher_is_valid_and_ordered() -> None:
@@ -71,10 +73,10 @@ def test_mixed_highway_one_hot_is_a_controlled_frenet_ablation() -> None:
 @pytest.mark.parametrize("mode", ["frenet_pid", "frenet_pid_v2"])
 def test_metadrive_frenet_pid_benchmark_pair_has_matched_training_settings(mode: str) -> None:
     builtin = yaml.safe_load(
-        (JOB_ROOT / f"metadrive_{mode}_builtin_benchmark.yaml").read_text(encoding="utf-8")
+        (METADRIVE_BENCHMARK_JOB_ROOT / f"metadrive_{mode}_builtin_benchmark.yaml").read_text(encoding="utf-8")
     )
     bdp = yaml.safe_load(
-        (JOB_ROOT / f"metadrive_{mode}_bdp_frenet_benchmark.yaml").read_text(encoding="utf-8")
+        (METADRIVE_BENCHMARK_JOB_ROOT / f"metadrive_{mode}_bdp_frenet_benchmark.yaml").read_text(encoding="utf-8")
     )
 
     assert builtin["environment"] == bdp["environment"]
@@ -89,31 +91,48 @@ def test_metadrive_frenet_pid_benchmark_pair_has_matched_training_settings(mode:
 
 
 @pytest.mark.parametrize(
-    ("script_name", "first_job", "second_job"),
+    ("bundle_name", "script_name", "first_job", "second_job"),
     [
         (
+            "benchmark",
             "run_metadrive_bdp_frenet_comparison.sh",
-            "metadrive_frenet_pid_v2_bdp_frenet_benchmark.yaml",
-            "metadrive_native_bdp_frenet_benchmark.yaml",
+            "benchmark/metadrive_frenet_pid_v2_bdp_frenet_benchmark.yaml",
+            "benchmark/metadrive_native_bdp_frenet_benchmark.yaml",
         ),
         (
+            "benchmark",
             "run_metadrive_builtin_comparison.sh",
-            "metadrive_frenet_pid_v2_builtin_benchmark.yaml",
-            "metadrive_native_builtin_benchmark.yaml",
+            "benchmark/metadrive_frenet_pid_v2_builtin_benchmark.yaml",
+            "benchmark/metadrive_native_builtin_benchmark.yaml",
+        ),
+        (
+            "benchmark_metadrive_12mps",
+            "run_metadrive_bdp_frenet_comparison.sh",
+            "benchmark_metadrive_12mps/metadrive_frenet_pid_v2_bdp_frenet_benchmark.yaml",
+            "benchmark_metadrive_12mps/metadrive_native_bdp_frenet_benchmark.yaml",
+        ),
+        (
+            "benchmark_metadrive_12mps",
+            "run_metadrive_builtin_comparison.sh",
+            "benchmark_metadrive_12mps/metadrive_frenet_pid_v2_builtin_benchmark.yaml",
+            "benchmark_metadrive_12mps/metadrive_native_builtin_benchmark.yaml",
         ),
     ],
 )
 def test_metadrive_comparison_launchers_are_valid_and_ordered(
+    bundle_name: str,
     script_name: str,
     first_job: str,
     second_job: str,
 ) -> None:
-    script = JOB_ROOT / script_name
+    script = JOB_ROOT / bundle_name / script_name
 
     syntax = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True, check=False)
     assert syntax.returncode == 0, syntax.stderr
 
     source = script.read_text(encoding="utf-8")
+    assert (JOB_ROOT / first_job).is_file()
+    assert (JOB_ROOT / second_job).is_file()
     assert source.index(first_job) < source.index(second_job)
     assert source.count('"$@"') == 2
 
@@ -126,10 +145,11 @@ def test_active_metadrive_benchmarks_use_paper_aligned_ppo_configuration() -> No
         "metadrive_frenet_pid_v2_builtin_benchmark.yaml",
         "metadrive_native_bdp_frenet_benchmark.yaml",
         "metadrive_native_builtin_benchmark.yaml",
+        "metadrive_native_continuous_builtin_benchmark.yaml",
     )
 
     for name in names:
-        config = yaml.safe_load((JOB_ROOT / name).read_text(encoding="utf-8"))
+        config = yaml.safe_load((METADRIVE_BENCHMARK_JOB_ROOT / name).read_text(encoding="utf-8"))
         algorithm = config["algorithm"]
         assert algorithm["n_envs"] == 8, name
         assert algorithm["trpo_timesteps_per_batch"] == 1000, name
@@ -145,3 +165,91 @@ def test_active_metadrive_benchmarks_use_paper_aligned_ppo_configuration() -> No
         assert algorithm["num_timesteps"] // rollout_size * 1600 == 400_000, name
         assert config["environment"]["environment_config"]["store_map"] is False, name
         assert config["logging"]["log_interval"] == 1, name
+
+
+def test_all_metadrive_job_scripts_use_demo_termination_overrides() -> None:
+    metadrive_jobs = []
+    for path in JOB_ROOT.rglob("*.yaml"):
+        config = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if config["environment"]["simulator"] == "metadrive":
+            metadrive_jobs.append(path)
+            env_config = config["environment"]["environment_config"]
+            assert env_config["out_of_route_done"] is True, path
+            assert env_config["on_continuous_line_done"] is False, path
+
+    assert metadrive_jobs
+
+
+def test_active_metadrive_job_scripts_use_expert_nearby_vehicle_observation() -> None:
+    metadrive_jobs = []
+    for bundle_root in (METADRIVE_BENCHMARK_JOB_ROOT, METADRIVE_12MPS_JOB_ROOT):
+        for path in bundle_root.glob("*.yaml"):
+            config = yaml.safe_load(path.read_text(encoding="utf-8"))
+            if config["environment"]["simulator"] == "metadrive":
+                metadrive_jobs.append(path)
+                lidar_config = config["environment"]["environment_config"]["vehicle_config"]["lidar"]
+                assert lidar_config["num_others"] == 4, path
+
+    assert metadrive_jobs
+
+
+def test_active_metadrive_frenet_pid_jobs_match_visual_check_pid_configuration() -> None:
+    reference = yaml.safe_load(
+        (METADRIVE_BENCHMARK_JOB_ROOT / "metadrive_frenet_pid_v2_bdp_frenet_lateral_only_visual_check.yaml").read_text(encoding="utf-8")
+    )["pid"]
+    jobs = []
+    for bundle_root in (METADRIVE_BENCHMARK_JOB_ROOT, METADRIVE_12MPS_JOB_ROOT):
+        for path in bundle_root.glob("metadrive_*_benchmark.yaml"):
+            config = yaml.safe_load(path.read_text(encoding="utf-8"))
+            if config["environment"]["trajectory_execution_mode"] in {"frenet_pid", "frenet_pid_v2"}:
+                jobs.append(path)
+                assert config["pid"] == reference, path
+
+    assert jobs
+
+
+@pytest.mark.parametrize(
+    ("bundle_root", "physical_speed_km_h", "target_speed_mps", "frenet_speed_delta_mps"),
+    [
+        (METADRIVE_BENCHMARK_JOB_ROOT, 80.0, 22.222222, 5.0),
+        (METADRIVE_12MPS_JOB_ROOT, 43.2, 12.0, 2.5),
+    ],
+)
+def test_metadrive_bundles_have_consistent_speed_contracts(
+    bundle_root: Path,
+    physical_speed_km_h: float,
+    target_speed_mps: float,
+    frenet_speed_delta_mps: float,
+) -> None:
+    jobs = []
+    for path in bundle_root.glob("*.yaml"):
+        config = yaml.safe_load(path.read_text(encoding="utf-8"))
+        jobs.append(path)
+        env_config = config["environment"]["environment_config"]
+        assert env_config["agent_configs"]["default_agent"]["max_speed_km_h"] == physical_speed_km_h, path
+
+        mode = config["environment"]["trajectory_execution_mode"]
+        policy_mode = config["model_architecture"]["policy_mode"]
+        if mode in {"frenet_pid", "frenet_pid_v2"}:
+            assert config["frenet"]["maximum_target_speed_mps"] == target_speed_mps, path
+            assert config["frenet"]["frenet_speed_delta_mps"] == frenet_speed_delta_mps, path
+        elif policy_mode == "bdp":
+            assert config["frenet"]["maximum_target_speed_mps"] == target_speed_mps, path
+
+    assert jobs
+
+
+@pytest.mark.parametrize("bundle_root", [METADRIVE_BENCHMARK_JOB_ROOT, METADRIVE_12MPS_JOB_ROOT])
+def test_continuous_native_job_is_a_controlled_action_space_reference(bundle_root: Path) -> None:
+    discrete = yaml.safe_load(
+        (bundle_root / "metadrive_native_builtin_benchmark.yaml").read_text(encoding="utf-8")
+    )
+    continuous = yaml.safe_load(
+        (bundle_root / "metadrive_native_continuous_builtin_benchmark.yaml").read_text(encoding="utf-8")
+    )
+
+    assert continuous["environment"]["environment_config"]["discrete_action"] is False
+    del discrete["runtime"]["run_name"]
+    del continuous["runtime"]["run_name"]
+    del continuous["environment"]["environment_config"]["discrete_action"]
+    assert continuous == discrete

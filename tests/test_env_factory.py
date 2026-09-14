@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from gymnasium import spaces
 
 from bdp_benchmark.config import parse_args
 from bdp_benchmark.env_factory import make_single_env, make_vector_env
@@ -63,6 +64,37 @@ def test_factory_constructs_full_policy_execution_matrix(
 def test_factory_rejects_dummy_vectorization_for_parallel_metadrive() -> None:
     with pytest.raises(ValueError, match="requires vec_env=subproc"):
         parse_args(["--simulator", "metadrive", "--n_envs", "2", "--vec_env", "dummy"])
+
+
+def test_metadrive_native_builtin_can_preserve_continuous_action_space() -> None:
+    args = parse_args(
+        [
+            "--simulator",
+            "metadrive",
+            "--trajectory_execution_mode",
+            "native_controller",
+            "--policy_mode",
+            "builtin",
+            "--environment_config",
+            '{"use_render": false, "traffic_density": 0.0, "num_scenarios": 1, '
+            '"map": "S", "horizon": 10, "log_level": 50, "discrete_action": false}',
+        ]
+    )
+
+    env = make_single_env(args)
+    try:
+        observation, _ = env.reset(seed=0)
+        assert isinstance(env.action_space, spaces.Box)
+        assert env.action_space.shape == (2,)
+        assert isinstance(observation, np.ndarray)
+        next_observation, reward, terminated, truncated, info = env.step(np.asarray([0.0, 0.0], dtype=np.float32))
+        assert next_observation.shape == observation.shape
+        assert isinstance(reward, float)
+        assert isinstance(terminated, bool)
+        assert isinstance(truncated, bool)
+        assert isinstance(info, dict)
+    finally:
+        env.close()
 
 
 def test_mixed_highway_worker_assignment_is_fixed_round_robin(tmp_path) -> None:

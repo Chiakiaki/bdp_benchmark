@@ -67,6 +67,47 @@ def test_config_rejects_sampler_that_does_not_match_execution_mode() -> None:
         validate_args(args)
 
 
+def test_config_rejects_continuous_native_action_for_bdp() -> None:
+    args = parse_args(
+        [
+            "--simulator",
+            "metadrive",
+            "--trajectory_execution_mode",
+            "native_controller",
+            "--environment_config",
+            '{"discrete_action": false}',
+            "--policy_mode",
+            "bdp",
+            "--candidate_sampler",
+            "native_action_frenet",
+        ],
+        validate=False,
+    )
+
+    with pytest.raises(ValueError, match="continuous MetaDrive native action.*builtin"):
+        validate_args(args)
+
+
+def test_config_rejects_candidate_visual_check_for_continuous_native_action() -> None:
+    args = parse_args(
+        [
+            "--simulator",
+            "metadrive",
+            "--trajectory_execution_mode",
+            "native_controller",
+            "--environment_config",
+            '{"discrete_action": false}',
+            "--policy_mode",
+            "builtin",
+            "--visual_check",
+        ],
+        validate=False,
+    )
+
+    with pytest.raises(ValueError, match="visual_check.*continuous MetaDrive native action"):
+        validate_args(args)
+
+
 def test_config_rejects_invalid_horizon_sampling() -> None:
     args = parse_args(["--trajectory_horizon_s", "0.0"], validate=False)
     with pytest.raises(ValueError, match="trajectory_horizon_s"):

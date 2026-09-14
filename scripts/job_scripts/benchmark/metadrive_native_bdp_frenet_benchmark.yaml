@@ -10,6 +10,16 @@ environment:
   trajectory_execution_mode: native_controller
   environment_config:
     use_render: false
+    out_of_route_done: true
+    on_continuous_line_done: false
+    vehicle_config:
+      lidar:
+        num_others: 4
+    agent_configs:
+      default_agent:
+        use_special_color: true
+        spawn_lane_index: [">", ">>", 0]
+        max_speed_km_h: 80.0
     map: 3
     traffic_density: 0.1
     random_traffic: false
@@ -25,6 +35,7 @@ frenet:
   trajectory_sample_count: 11
   native_lateral_span_m: 3.5
   native_speed_span_mps: 5.0
+  maximum_target_speed_mps: 22.222222
   position_feature_scale_m: 50.0
   speed_feature_scale_mps: 40.0
 algorithm:

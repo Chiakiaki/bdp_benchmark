@@ -1,22 +1,23 @@
 # Benchmark Jobs
 
-The active jobs in this directory are the first matched native-controller
-comparison:
+The active MetaDrive benchmark jobs are grouped under `benchmark/`. The first
+matched native-controller comparison is:
 
 ```text
 highway_native_builtin_benchmark.yaml
 highway_native_bdp_frenet_benchmark.yaml
-metadrive_native_builtin_benchmark.yaml
-metadrive_native_bdp_frenet_benchmark.yaml
+benchmark/metadrive_native_builtin_benchmark.yaml
+benchmark/metadrive_native_continuous_builtin_benchmark.yaml
+benchmark/metadrive_native_bdp_frenet_benchmark.yaml
 ```
 
 The active MetaDrive Frenet-PID comparisons are:
 
 ```text
-metadrive_frenet_pid_builtin_benchmark.yaml
-metadrive_frenet_pid_bdp_frenet_benchmark.yaml
-metadrive_frenet_pid_v2_builtin_benchmark.yaml
-metadrive_frenet_pid_v2_bdp_frenet_benchmark.yaml
+benchmark/metadrive_frenet_pid_builtin_benchmark.yaml
+benchmark/metadrive_frenet_pid_bdp_frenet_benchmark.yaml
+benchmark/metadrive_frenet_pid_v2_builtin_benchmark.yaml
+benchmark/metadrive_frenet_pid_v2_bdp_frenet_benchmark.yaml
 ```
 
 Each pair selects the same 15 trajectories: three adaptive lane-center targets
@@ -27,13 +28,40 @@ simulator outcomes remain actual-state based.
 Run each matched execution-mode comparison sequentially:
 
 ```bash
-./scripts/job_scripts/run_metadrive_bdp_frenet_comparison.sh
-./scripts/job_scripts/run_metadrive_builtin_comparison.sh
+./scripts/job_scripts/benchmark/run_metadrive_bdp_frenet_comparison.sh
+./scripts/job_scripts/benchmark/run_metadrive_builtin_comparison.sh
 ```
 
 The first script compares Frenet-PID v2 with native execution under BDP-Frenet
 scoring. The second makes the same execution-mode comparison under builtin PPO.
 Additional CLI arguments are forwarded to both jobs within each script.
+
+The standalone continuous-action reference preserves the 80 km/h native
+builtin job's configuration while replacing `Discrete(25)` with MetaDrive's
+default normalized `Box(2)` steering and throttle/brake action:
+
+```bash
+python3 scripts/train.py --config scripts/job_scripts/benchmark/metadrive_native_continuous_builtin_benchmark.yaml
+```
+
+The main bundle explicitly uses the MetaDrive and paper physical ceiling of
+`80 km/h` (`22.222222 m/s`). Frenet target trajectories and native BDP
+descriptors are capped at the same value. See
+[`benchmark/config_contract.md`](benchmark/config_contract.md) for the complete
+configuration contract and [`benchmark/paper_writing.md`](benchmark/paper_writing.md)
+for the bundled expert's reproducibility limitation.
+
+`benchmark_metadrive_12mps/` is a controlled stability ablation. It preserves
+the main configuration while limiting the ego vehicle and candidate targets to
+`12 m/s` (`43.2 km/h`) and reducing the Frenet target-speed delta to `2.5 m/s`.
+It also includes `metadrive_native_continuous_builtin_benchmark.yaml` as the
+continuous-action counterpart to the capped native categorical job.
+Launch its matched comparisons with:
+
+```bash
+./scripts/job_scripts/benchmark_metadrive_12mps/run_metadrive_bdp_frenet_comparison.sh
+./scripts/job_scripts/benchmark_metadrive_12mps/run_metadrive_builtin_comparison.sh
+```
 
 The mixed-road HighwayEnv comparison uses:
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import gymnasium as gym
+import numpy as np
 from metadrive.envs.metadrive_env import MetaDriveEnv
 from metadrive.envs.scenario_env import ScenarioEnv
 
@@ -34,7 +35,7 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
         config = dict(env_config or {})
         config["use_render"] = render_mode == "human" or bool(config.get("use_render", False))
         if execution_mode == "native_controller":
-            config["discrete_action"] = True
+            config["discrete_action"] = bool(config.get("discrete_action", True))
             config["use_multi_discrete"] = False
         else:
             config["agent_policy"] = MetaDriveFrenetPIDPolicy
@@ -48,13 +49,21 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
         if env_id not in env_classes:
             raise ValueError(f"Unsupported MetaDrive env_id: {env_id}. Available: {sorted(env_classes)}")
         super().__init__(env_classes[env_id](config))
-        expected_actions = (
-            int(self.env.config["discrete_steering_dim"]) * int(self.env.config["discrete_throttle_dim"])
-            if execution_mode == "native_controller"
-            else FRENET_PID_ACTION_COUNT
-        )
-        if not isinstance(self.action_space, gym.spaces.Discrete) or int(self.action_space.n) != expected_actions:
-            raise RuntimeError(f"MetaDrive action space does not match expected Discrete({expected_actions}): {self.action_space}")
+        continuous_native = execution_mode == "native_controller" and not bool(self.env.config["discrete_action"])
+        self._continuous_native = continuous_native
+        if continuous_native:
+            if not isinstance(self.action_space, gym.spaces.Box) or self.action_space.shape != (2,):
+                raise RuntimeError(f"MetaDrive action space does not match expected Box(2): {self.action_space}")
+        else:
+            expected_actions = (
+                int(self.env.config["discrete_steering_dim"]) * int(self.env.config["discrete_throttle_dim"])
+                if execution_mode == "native_controller"
+                else FRENET_PID_ACTION_COUNT
+            )
+            if not isinstance(self.action_space, gym.spaces.Discrete) or int(self.action_space.n) != expected_actions:
+                raise RuntimeError(
+                    f"MetaDrive action space does not match expected Discrete({expected_actions}): {self.action_space}"
+                )
         self.execution_mode = execution_mode
         self.adapter = MetaDriveAdapter(self.env, generation_config)
         self.tracker_config = tracker_config
@@ -122,6 +131,12 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
             self._visualizer = MetaDriveVisualizer(self)
 
     def step(self, action):
+        if self._continuous_native:
+            continuous_action = np.asarray(action, dtype=np.float32)
+            if continuous_action.shape != (2,):
+                raise ValueError(f"Continuous MetaDrive action must have shape (2,), got {continuous_action.shape}")
+            self._latest_candidates = None
+            return self.env.step(continuous_action)
         action_idx = int(action)
         if self.execution_mode in ("frenet_pid", "frenet_pid_v2"):
             candidate_set = self._latest_candidates or self.build_candidate_set()

@@ -197,6 +197,18 @@ def validate_args(args: argparse.Namespace) -> argparse.Namespace:
             )
     if args.simulator == "metadrive" and args.n_envs > 1 and args.vec_env != "subproc":
         raise ValueError("MetaDrive with n_envs > 1 requires vec_env=subproc")
+    metadrive_discrete_action = args.environment_config.get("discrete_action", True)
+    if args.simulator == "metadrive" and not isinstance(metadrive_discrete_action, bool):
+        raise ValueError("MetaDrive environment_config.discrete_action must be a boolean")
+    continuous_metadrive_native = (
+        args.simulator == "metadrive"
+        and args.trajectory_execution_mode == "native_controller"
+        and metadrive_discrete_action is False
+    )
+    if continuous_metadrive_native and args.policy_mode != "builtin":
+        raise ValueError("continuous MetaDrive native action is supported only with policy_mode=builtin")
+    if continuous_metadrive_native and args.visual_check:
+        raise ValueError("visual_check candidate overlays do not support continuous MetaDrive native action")
     if args.policy_mode == "bdp":
         allowed = {
             "native_controller": {"one_hot", "native_action_frenet"},
