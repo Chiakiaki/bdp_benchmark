@@ -69,6 +69,7 @@ algorithm:
 model_architecture:
   policy_mode: builtin
   builtin_policy: MlpPolicy
+  candidate_sampler: frenet_route_continuous
   policy_layers: [256, 256]
   value_layers: [256, 256]
 logging:

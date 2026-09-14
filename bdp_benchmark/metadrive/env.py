@@ -29,6 +29,7 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
         tracker_config: TrackerConfig,
         env_config: dict[str, Any] | None = None,
         render_mode: str | None = None,
+        reference_mode: str = "lane_segment",
     ) -> None:
         if execution_mode not in ("native_controller", "frenet_pid", "frenet_pid_v2"):
             raise ValueError(f"Unsupported MetaDrive execution mode: {execution_mode}")
@@ -65,7 +66,7 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
                     f"MetaDrive action space does not match expected Discrete({expected_actions}): {self.action_space}"
                 )
         self.execution_mode = execution_mode
-        self.adapter = MetaDriveAdapter(self.env, generation_config)
+        self.adapter = MetaDriveAdapter(self.env, generation_config, reference_mode=reference_mode)
         self.tracker_config = tracker_config
         self._latest_candidates: CandidateSet | None = None
         self._visualizer = None
@@ -79,6 +80,7 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
 
     def reset(self, **kwargs):
         self._latest_candidates = None
+        self.adapter.reset()
         if self._nominal_state is not None:
             self._nominal_state.reset()
         if self._visualizer is not None:

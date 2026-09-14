@@ -25,16 +25,25 @@ by five target-speed offsets. `frenet_pid` plans from the actual state;
 `frenet_pid_v2` plans from the projected nominal state while PID execution and
 simulator outcomes remain actual-state based.
 
+The active MetaDrive BDP and Frenet-PID jobs use
+`candidate_sampler: frenet_route_continuous`. Their reference centerline follows
+connected lane segments along the assigned MetaDrive route instead of
+extrapolating the current lane past its endpoint. The legacy example jobs keep
+`frenet` and `native_action_frenet` for old-checkpoint compatibility.
+
 Run each matched execution-mode comparison sequentially:
 
 ```bash
+./scripts/job_scripts/benchmark/run_metadrive_frenet_pid_comparison.sh
 ./scripts/job_scripts/benchmark/run_metadrive_bdp_frenet_comparison.sh
 ./scripts/job_scripts/benchmark/run_metadrive_builtin_comparison.sh
 ```
 
-The first script compares Frenet-PID v2 with native execution under BDP-Frenet
-scoring. The second makes the same execution-mode comparison under builtin PPO.
-Additional CLI arguments are forwarded to both jobs within each script.
+The first script compares BDP-Frenet with builtin PPO while both use actual-state
+Frenet-PID execution. The second compares Frenet-PID v2 with native execution
+under BDP-Frenet scoring. The third makes the same execution-mode comparison
+under builtin PPO. Additional CLI arguments are forwarded to both jobs within
+each script.
 
 The standalone continuous-action reference preserves the 80 km/h native
 builtin job's configuration while replacing `Discrete(25)` with MetaDrive's

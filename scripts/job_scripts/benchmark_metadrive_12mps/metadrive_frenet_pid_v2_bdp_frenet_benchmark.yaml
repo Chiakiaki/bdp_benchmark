@@ -69,7 +69,7 @@ algorithm:
 model_architecture:
   policy_mode: bdp
   builtin_policy: MlpPolicy
-  candidate_sampler: frenet
+  candidate_sampler: frenet_route_continuous
   candidate_scorer: dot
   policy_layers: [256, 256]
   value_layers: [256, 256]

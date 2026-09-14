@@ -188,6 +188,24 @@ pid:
 
 Native-controller jobs do not use this PID block.
 
+`frenet_pid` and `frenet_pid_v2` are configuration-matched apart from run names and trajectory origin. `frenet_pid` generates each candidate set from the current actual ego state. `frenet_pid_v2` projects the actual ego pose onto the previously selected trajectory and generates the next candidate set from that nominal state. Both execute the selected trajectory through PID feedback against the actual vehicle state.
+
+## Route-Continuous Frenet Contract
+
+All active jobs that construct MetaDrive Frenet geometry use:
+
+```yaml
+candidate_sampler: frenet_route_continuous
+```
+
+This includes native BDP descriptors, Frenet-PID BDP, Frenet-PID-v2 BDP, both builtin Frenet-PID jobs, and the candidate visual check. The setting is interpreted by `bdp_benchmark`; no MetaDrive-specific route logic is added to `critic_based_rl`.
+
+The route-continuous generator consumes the remaining bounded portion of the current route lane, selects geometrically connected successor lanes from `navigation.checkpoints`, and continues until the candidate horizon or route endpoint. Actual-state mode projects `x_actual` onto these bounded route lanes. Nominal-state mode projects `x_nominal`, allowing planning to enter a successor segment before the physical vehicle crosses the boundary.
+
+Candidate count, ordering, trajectory horizon, feature width, and policy architecture remain unchanged. The values differ near segment boundaries, so checkpoints must use the sampler recorded in their effective configuration even though tensor dimensions match.
+
+Legacy `frenet` and `native_action_frenet` retain single-current-lane extrapolation and remain supported for existing checkpoints and historical ablations.
+
 ## Reward Contract
 
 The active YAMLs do not override the MetaDrive reward coefficients. They inherit the current `MetaDriveEnv` defaults:

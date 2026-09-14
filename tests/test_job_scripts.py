@@ -86,7 +86,7 @@ def test_metadrive_frenet_pid_benchmark_pair_has_matched_training_settings(mode:
     assert builtin["environment"]["trajectory_execution_mode"] == mode
     assert builtin["model_architecture"]["policy_mode"] == "builtin"
     assert bdp["model_architecture"]["policy_mode"] == "bdp"
-    assert bdp["model_architecture"]["candidate_sampler"] == "frenet"
+    assert bdp["model_architecture"]["candidate_sampler"] == "frenet_route_continuous"
     assert bdp["model_architecture"]["candidate_scorer"] == "dot"
 
 
@@ -104,6 +104,12 @@ def test_metadrive_frenet_pid_benchmark_pair_has_matched_training_settings(mode:
             "run_metadrive_builtin_comparison.sh",
             "benchmark/metadrive_frenet_pid_v2_builtin_benchmark.yaml",
             "benchmark/metadrive_native_builtin_benchmark.yaml",
+        ),
+        (
+            "benchmark",
+            "run_metadrive_frenet_pid_comparison.sh",
+            "benchmark/metadrive_frenet_pid_bdp_frenet_benchmark.yaml",
+            "benchmark/metadrive_frenet_pid_builtin_benchmark.yaml",
         ),
         (
             "benchmark_metadrive_12mps",
@@ -253,3 +259,46 @@ def test_continuous_native_job_is_a_controlled_action_space_reference(bundle_roo
     del continuous["runtime"]["run_name"]
     del continuous["environment"]["environment_config"]["discrete_action"]
     assert continuous == discrete
+
+
+@pytest.mark.parametrize(
+    ("actual_name", "nominal_name"),
+    [
+        ("metadrive_frenet_pid_bdp_frenet_benchmark.yaml", "metadrive_frenet_pid_v2_bdp_frenet_benchmark.yaml"),
+        ("metadrive_frenet_pid_builtin_benchmark.yaml", "metadrive_frenet_pid_v2_builtin_benchmark.yaml"),
+    ],
+)
+def test_frenet_pid_v1_and_v2_differ_only_by_trajectory_origin(
+    actual_name: str,
+    nominal_name: str,
+) -> None:
+    actual = yaml.safe_load((METADRIVE_BENCHMARK_JOB_ROOT / actual_name).read_text(encoding="utf-8"))
+    nominal = yaml.safe_load((METADRIVE_BENCHMARK_JOB_ROOT / nominal_name).read_text(encoding="utf-8"))
+
+    assert actual["environment"]["trajectory_execution_mode"] == "frenet_pid"
+    assert nominal["environment"]["trajectory_execution_mode"] == "frenet_pid_v2"
+    del actual["runtime"]["run_name"]
+    del nominal["runtime"]["run_name"]
+    del actual["environment"]["trajectory_execution_mode"]
+    del nominal["environment"]["trajectory_execution_mode"]
+    assert actual == nominal
+
+
+@pytest.mark.parametrize("bundle_root", [METADRIVE_BENCHMARK_JOB_ROOT, METADRIVE_12MPS_JOB_ROOT])
+def test_active_metadrive_frenet_jobs_use_route_continuous_sampler(bundle_root: Path) -> None:
+    selected = []
+    for path in bundle_root.glob("*.yaml"):
+        config = yaml.safe_load(path.read_text(encoding="utf-8"))
+        mode = config["environment"]["trajectory_execution_mode"]
+        policy_mode = config["model_architecture"]["policy_mode"]
+        uses_frenet_geometry = mode in {"frenet_pid", "frenet_pid_v2"} or (
+            mode == "native_controller" and policy_mode == "bdp"
+        )
+        sampler = config["model_architecture"].get("candidate_sampler")
+        if uses_frenet_geometry:
+            selected.append(path)
+            assert sampler == "frenet_route_continuous", path
+        else:
+            assert sampler != "frenet_route_continuous", path
+
+    assert selected

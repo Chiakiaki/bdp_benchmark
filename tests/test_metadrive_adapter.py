@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+from gymnasium import spaces
 import numpy as np
 import pytest
+from metadrive.component.lane.circular_lane import CircularLane
+from metadrive.component.lane.straight_lane import StraightLane
 
 from bdp_benchmark.metadrive.adapter import (
+    MetaDriveAdapter,
     decode_discrete_action_grid,
     frenet_pid_target_grid,
     native_action_targets,
@@ -13,6 +19,45 @@ from bdp_benchmark.common.tracking import TrackerConfig
 from bdp_benchmark.metadrive.env import MetaDriveBenchmarkEnv
 
 
+def _transition_adapter(reference_mode: str) -> MetaDriveAdapter:
+    straight = StraightLane([0.0, 0.0], [10.0, 0.0])
+    straight.index = ("start", "junction", 0)
+    curve = CircularLane(
+        center=(10.0, 5.0),
+        radius=5.0,
+        start_phase=-np.pi / 2.0,
+        angle=np.pi / 2.0,
+        clockwise=False,
+    )
+    curve.index = ("junction", "finish", 0)
+    graph = {
+        "start": {"junction": [straight]},
+        "junction": {"finish": [curve]},
+    }
+    navigation = SimpleNamespace(
+        current_lane=straight,
+        checkpoints=["start", "junction", "finish"],
+        _target_checkpoints_index=[0, 1],
+        map=SimpleNamespace(road_network=SimpleNamespace(graph=graph)),
+    )
+    vehicle = SimpleNamespace(
+        position=np.asarray([8.0, 0.0]),
+        heading_theta=0.0,
+        speed=8.0,
+        navigation=navigation,
+    )
+    env = SimpleNamespace(
+        agent=vehicle,
+        action_space=spaces.Discrete(15),
+        config={"discrete_steering_dim": 5, "discrete_throttle_dim": 5},
+    )
+    return MetaDriveAdapter(
+        env,
+        CandidateGenerationConfig(horizon_s=2.0, sample_count=11, speed_delta_mps=5.0),
+        reference_mode=reference_mode,
+    )
+
+
 def test_metadrive_action_grid_matches_env_input_policy_order() -> None:
     steering, throttle = decode_discrete_action_grid(steering_dim=5, throttle_dim=5)
 
@@ -20,6 +65,22 @@ def test_metadrive_action_grid_matches_env_input_policy_order() -> None:
     assert throttle.shape == (25,)
     np.testing.assert_allclose(steering[:5], [-1.0, -0.5, 0.0, 0.5, 1.0])
     np.testing.assert_allclose(throttle[[0, 5, 10, 15, 20]], [-1.0, -0.5, 0.0, 0.5, 1.0])
+
+
+def test_route_continuous_adapter_follows_successor_while_legacy_extrapolates() -> None:
+    legacy = _transition_adapter("lane_segment").build_candidate_set("frenet_pid")
+    route_continuous = _transition_adapter("route_continuous").build_candidate_set("frenet_pid")
+
+    center_candidate = 7
+    assert legacy.trajectories[center_candidate, -1, 1] == pytest.approx(0.0, abs=1.0e-5)
+    assert route_continuous.trajectories[center_candidate, -1, 1] > 1.0
+    assert route_continuous.trajectories.shape == legacy.trajectories.shape == (15, 11, 4)
+    assert route_continuous.features.shape == legacy.features.shape
+
+
+def test_metadrive_adapter_rejects_unknown_reference_mode() -> None:
+    with pytest.raises(ValueError, match="reference_mode"):
+        _transition_adapter("unknown")
 
 
 def test_all_five_metadrive_steering_bins_have_distinct_continuous_lateral_targets() -> None:

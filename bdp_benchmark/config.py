@@ -209,17 +209,22 @@ def validate_args(args: argparse.Namespace) -> argparse.Namespace:
         raise ValueError("continuous MetaDrive native action is supported only with policy_mode=builtin")
     if continuous_metadrive_native and args.visual_check:
         raise ValueError("visual_check candidate overlays do not support continuous MetaDrive native action")
+    route_continuous_frenet = args.candidate_sampler == "frenet_route_continuous"
+    if route_continuous_frenet and args.simulator != "metadrive":
+        raise ValueError("candidate_sampler=frenet_route_continuous is supported only for MetaDrive")
+    if route_continuous_frenet and continuous_metadrive_native:
+        raise ValueError("frenet_route_continuous requires a discrete MetaDrive action space")
     if args.policy_mode == "bdp":
         allowed = {
-            "native_controller": {"one_hot", "native_action_frenet"},
-            "frenet_pid": {"one_hot", "frenet"},
-            "frenet_pid_v2": {"one_hot", "frenet"},
+            "native_controller": {"one_hot", "native_action_frenet", "frenet_route_continuous"},
+            "frenet_pid": {"one_hot", "frenet", "frenet_route_continuous"},
+            "frenet_pid_v2": {"one_hot", "frenet", "frenet_route_continuous"},
         }[args.trajectory_execution_mode]
         if args.candidate_sampler not in allowed:
             required = (
-                "candidate_sampler=frenet"
+                "candidate_sampler=frenet or frenet_route_continuous"
                 if args.trajectory_execution_mode in ("frenet_pid", "frenet_pid_v2")
-                else "one_hot or native_action_frenet"
+                else "one_hot, native_action_frenet, or frenet_route_continuous"
             )
             raise ValueError(
                 f"{args.trajectory_execution_mode} BDP mode requires {required}; got {args.candidate_sampler}"

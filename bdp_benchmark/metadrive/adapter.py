@@ -8,11 +8,18 @@ from bdp_benchmark.common.candidates import CandidateGenerationConfig
 from bdp_benchmark.common.contracts import CandidateSet, EgoState
 from bdp_benchmark.common.features import encode_ego_local_features
 from bdp_benchmark.common.frenet import FrenetState, ReferencePath, frenet_to_world, generate_frenet_trajectories
+from bdp_benchmark.metadrive.route_reference import (
+    RoutePosition,
+    build_route_reference,
+    project_route_position,
+    resolve_route_lanes,
+)
 
 
 FRENET_PID_LATERAL_DIM = 3
 FRENET_PID_SPEED_DIM = 5
 FRENET_PID_ACTION_COUNT = FRENET_PID_LATERAL_DIM * FRENET_PID_SPEED_DIM
+FRENET_REFERENCE_MODES = ("lane_segment", "route_continuous")
 
 
 def decode_discrete_action_grid(*, steering_dim: int, throttle_dim: int) -> tuple[np.ndarray, np.ndarray]:
@@ -68,9 +75,24 @@ def frenet_pid_target_grid(
 class MetaDriveAdapter:
     SEMANTIC_ACTION_COUNT = FRENET_PID_ACTION_COUNT
 
-    def __init__(self, env, config: CandidateGenerationConfig) -> None:
+    def __init__(
+        self,
+        env,
+        config: CandidateGenerationConfig,
+        *,
+        reference_mode: str = "lane_segment",
+    ) -> None:
+        if reference_mode not in FRENET_REFERENCE_MODES:
+            raise ValueError(f"reference_mode must be one of {FRENET_REFERENCE_MODES}, got {reference_mode!r}")
         self.env = env
         self.config = config
+        self.reference_mode = reference_mode
+        self._route_lane_cache_key = None
+        self._route_lane_cache: tuple | None = None
+
+    def reset(self) -> None:
+        self._route_lane_cache_key = None
+        self._route_lane_cache = None
 
     @property
     def vehicle(self):
@@ -116,11 +138,93 @@ class MetaDriveAdapter:
             d_ddot=0.0,
         ), np.asarray(position, dtype=np.float64)
 
+    def _route_lanes(self) -> tuple:
+        navigation = self.vehicle.navigation
+        current_lane = self.lane
+        key = (
+            id(navigation.map),
+            tuple(navigation.checkpoints),
+            tuple(current_lane.index),
+        )
+        if key != self._route_lane_cache_key:
+            self._route_lane_cache = resolve_route_lanes(
+                navigation,
+                current_lane,
+                planning_xy=np.asarray(self.vehicle.position, dtype=np.float64),
+            )
+            self._route_lane_cache_key = key
+        assert self._route_lane_cache is not None
+        return self._route_lane_cache
+
+    def _route_state(
+        self,
+        planning_state: EgoState | None = None,
+    ) -> tuple[tuple, RoutePosition, FrenetState, np.ndarray, float]:
+        origin = self.ego_state() if planning_state is None else planning_state
+        position = np.asarray(origin.xy, dtype=np.float64)
+        speed = float(origin.speed)
+        route_lanes = self._route_lanes()
+        route_position = project_route_position(route_lanes, position)
+        heading = float(origin.heading)
+        velocity = speed * np.asarray([np.cos(heading), np.sin(heading)], dtype=np.float64)
+        lane_forward = np.asarray(
+            [np.cos(route_position.start_heading), np.sin(route_position.start_heading)],
+            dtype=np.float64,
+        )
+        standard_left = np.asarray([-lane_forward[1], lane_forward[0]], dtype=np.float64)
+        lane_lateral = standard_left * route_position.lateral_normal_sign
+        initial = FrenetState(
+            s=0.0,
+            s_dot=max(float(np.dot(velocity, lane_forward)), 0.0),
+            s_ddot=0.0,
+            d=route_position.start_lateral,
+            d_dot=float(np.dot(velocity, lane_lateral)),
+            d_ddot=0.0,
+        )
+        return route_lanes, route_position, initial, position, speed
+
+    def _targets_from_state(
+        self,
+        execution_mode: str,
+        *,
+        state: FrenetState,
+        position: np.ndarray,
+        speed: float,
+        lane,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if execution_mode == "native_controller":
+            return native_action_targets(
+                current_d=float(state.d),
+                current_speed=speed,
+                steering_dim=int(self.env.config["discrete_steering_dim"]),
+                throttle_dim=int(self.env.config["discrete_throttle_dim"]),
+                lateral_span_m=self.config.native_lateral_span_m,
+                speed_span_mps=self.config.native_speed_span_mps,
+                minimum_speed_mps=self.config.minimum_target_speed_mps,
+                maximum_speed_mps=self.config.maximum_target_speed_mps,
+            )
+        return frenet_pid_target_grid(
+            lane_centers=self._frenet_pid_lane_centers(position, lane=lane),
+            current_speed=speed,
+            speed_delta_mps=self.config.speed_delta_mps,
+            minimum_speed_mps=self.config.minimum_target_speed_mps,
+            maximum_speed_mps=self.config.maximum_target_speed_mps,
+        )
+
     def action_targets(
         self,
         execution_mode: str,
         planning_state: EgoState | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
+        if self.reference_mode == "route_continuous":
+            _route_lanes, route_position, state, position, speed = self._route_state(planning_state)
+            return self._targets_from_state(
+                execution_mode,
+                state=state,
+                position=position,
+                speed=speed,
+                lane=route_position.lane,
+            )
         _, state, position = self._lane_state(planning_state)
         if execution_mode == "native_controller":
             return native_action_targets(
@@ -142,8 +246,8 @@ class MetaDriveAdapter:
             maximum_speed_mps=self.config.maximum_target_speed_mps,
         )
 
-    def _frenet_pid_lane_centers(self, position: np.ndarray) -> np.ndarray:
-        lane = self.lane
+    def _frenet_pid_lane_centers(self, position: np.ndarray, *, lane=None) -> np.ndarray:
+        lane = self.lane if lane is None else lane
         navigation = self.vehicle.navigation
         longitudinal, _ = lane.local_coordinates(position)
         lane_width = float(lane.width_at(longitudinal))
@@ -186,8 +290,20 @@ class MetaDriveAdapter:
         execution_mode: str,
         planning_state: EgoState | None = None,
     ) -> CandidateSet:
-        start_longitudinal, initial, _ = self._lane_state(planning_state)
-        target_d, target_speed = self.action_targets(execution_mode, planning_state)
+        route_lanes = None
+        route_position = None
+        if self.reference_mode == "route_continuous":
+            route_lanes, route_position, initial, position, speed = self._route_state(planning_state)
+            target_d, target_speed = self._targets_from_state(
+                execution_mode,
+                state=initial,
+                position=position,
+                speed=speed,
+                lane=route_position.lane,
+            )
+        else:
+            start_longitudinal, initial, _ = self._lane_state(planning_state)
+            target_d, target_speed = self.action_targets(execution_mode, planning_state)
         frenet = generate_frenet_trajectories(
             initial,
             target_d,
@@ -195,7 +311,17 @@ class MetaDriveAdapter:
             horizon_s=self.config.horizon_s,
             sample_count=self.config.sample_count,
         )
-        reference = self._reference_path(start_longitudinal, float(np.max(frenet[..., 0])) + 1.0)
+        required_length = float(np.max(frenet[..., 0])) + 1.0
+        if route_lanes is not None and route_position is not None:
+            reference = build_route_reference(
+                route_lanes,
+                planning_xy=position,
+                required_length=required_length,
+                point_count=max(64, self.config.sample_count * 6),
+                route_position=route_position,
+            ).reference
+        else:
+            reference = self._reference_path(start_longitudinal, required_length)
         feature_origin = self.ego_state() if planning_state is None else planning_state
         world = frenet_to_world(
             reference,

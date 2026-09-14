@@ -97,6 +97,30 @@ def test_metadrive_native_builtin_can_preserve_continuous_action_space() -> None
         env.close()
 
 
+def test_builtin_frenet_job_uses_route_continuous_adapter_geometry() -> None:
+    args = parse_args(
+        [
+            "--simulator",
+            "metadrive",
+            "--trajectory_execution_mode",
+            "frenet_pid",
+            "--policy_mode",
+            "builtin",
+            "--candidate_sampler",
+            "frenet_route_continuous",
+            "--environment_config",
+            '{"use_render": false, "traffic_density": 0.0, "num_scenarios": 1, '
+            '"map": "SC", "horizon": 10, "log_level": 50}',
+        ]
+    )
+
+    env = make_single_env(args)
+    try:
+        assert env.adapter.reference_mode == "route_continuous"
+    finally:
+        env.close()
+
+
 def test_mixed_highway_worker_assignment_is_fixed_round_robin(tmp_path) -> None:
     args = parse_args(
         [

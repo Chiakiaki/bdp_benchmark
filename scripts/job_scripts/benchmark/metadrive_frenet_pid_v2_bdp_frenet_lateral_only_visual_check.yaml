@@ -1,6 +1,6 @@
-# Visual-check the 1M-step Frenet-PID-v2 BDP checkpoint with the experimental
-# lateral-only steering error and persistent steering integral. Candidate
-# generation and model inputs remain identical to the training run.
+# Visual-check a route-continuous Frenet-PID-v2 BDP checkpoint with the
+# lateral-only steering error and persistent steering integral. Supply a
+# checkpoint trained with the same sampler through --model_path.
 runtime:
   run_mode: evaluate
   run_name: metadrive_frenet_pid_v2_bdp_frenet_lateral_only_visual_check
@@ -62,12 +62,12 @@ algorithm:
 model_architecture:
   policy_mode: bdp
   builtin_policy: MlpPolicy
-  candidate_sampler: frenet
+  candidate_sampler: frenet_route_continuous
   candidate_scorer: dot
   policy_layers: [256, 256]
   value_layers: [256, 256]
 evaluation:
   evaluate_episodes: 3
-  model_path: logs/benchmark/20260914_143858_metadrive_frenet_pid_v2_bdp_frenet_benchmark/models/step_400000_steps.zip
+  model_path: null
 logging:
   monitor_mode: none

@@ -174,7 +174,7 @@ def _candidate_features_for_observation(args, candidate_set, observation) -> np.
     observed = np.asarray(observation["candidates"])[0]
     candidate_count = int(candidate_set.labels.shape[0])
     observed = observed[:candidate_count]
-    if str(args.candidate_sampler) in ("frenet", "native_action_frenet"):
+    if str(args.candidate_sampler) in ("frenet", "native_action_frenet", "frenet_route_continuous"):
         expected = np.asarray(candidate_set.features, dtype=np.float32)
     else:
         expected = np.eye(candidate_count, dtype=np.float32)

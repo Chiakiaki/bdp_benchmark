@@ -23,12 +23,18 @@ METADRIVE_CONFIG = {
     ("execution_mode", "expected_actions"),
     [("native_controller", 25), ("frenet_pid", 15), ("frenet_pid_v2", 15)],
 )
-def test_metadrive_modes_build_candidates_and_step_headlessly(execution_mode: str, expected_actions: int) -> None:
+@pytest.mark.parametrize("reference_mode", ["lane_segment", "route_continuous"])
+def test_metadrive_modes_build_candidates_and_step_headlessly(
+    execution_mode: str,
+    expected_actions: int,
+    reference_mode: str,
+) -> None:
     env = MetaDriveBenchmarkEnv(
         execution_mode=execution_mode,
         generation_config=CandidateGenerationConfig(horizon_s=0.5, sample_count=5),
         tracker_config=TrackerConfig(),
         env_config=METADRIVE_CONFIG,
+        reference_mode=reference_mode,
     )
     try:
         # SB3 seeds are experiment seeds, while MetaDrive treats reset seeds as

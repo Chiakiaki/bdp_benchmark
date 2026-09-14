@@ -236,6 +236,41 @@ def test_frenet_pid_v2_is_an_explicit_supported_execution_mode() -> None:
     assert args.trajectory_execution_mode == "frenet_pid_v2"
 
 
+@pytest.mark.parametrize("execution_mode", ["native_controller", "frenet_pid", "frenet_pid_v2"])
+def test_metadrive_accepts_route_continuous_frenet_sampler(execution_mode: str) -> None:
+    args = parse_args(
+        [
+            "--simulator",
+            "metadrive",
+            "--trajectory_execution_mode",
+            execution_mode,
+            "--policy_mode",
+            "bdp",
+            "--candidate_sampler",
+            "frenet_route_continuous",
+        ]
+    )
+
+    assert args.candidate_sampler == "frenet_route_continuous"
+
+
+def test_route_continuous_frenet_sampler_is_metadrive_only() -> None:
+    args = parse_args(
+        [
+            "--simulator",
+            "highway",
+            "--policy_mode",
+            "bdp",
+            "--candidate_sampler",
+            "frenet_route_continuous",
+        ],
+        validate=False,
+    )
+
+    with pytest.raises(ValueError, match="frenet_route_continuous.*MetaDrive"):
+        validate_args(args)
+
+
 def test_highway_environment_variants_use_shared_ego_relative_observation(tmp_path: Path) -> None:
     config_path = tmp_path / "mixed.yaml"
     config_path.write_text(

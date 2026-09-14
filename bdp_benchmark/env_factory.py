@@ -76,6 +76,7 @@ def make_raw_benchmark_env(args, *, env_id: str | None = None, render_mode: str 
     if args.simulator == "metadrive":
         from .metadrive.env import MetaDriveBenchmarkEnv
 
+        reference_mode = "route_continuous" if args.candidate_sampler == "frenet_route_continuous" else "lane_segment"
         return MetaDriveBenchmarkEnv(
             env_id=env_id,
             execution_mode=args.trajectory_execution_mode,
@@ -83,6 +84,7 @@ def make_raw_benchmark_env(args, *, env_id: str | None = None, render_mode: str 
             tracker_config=tracker_config,
             env_config=args.environment_config,
             render_mode=render_mode,
+            reference_mode=reference_mode,
         )
     raise ValueError(f"Unsupported simulator: {args.simulator}")
 

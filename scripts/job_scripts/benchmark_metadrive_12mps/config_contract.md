@@ -4,6 +4,8 @@ This bundle is a controlled speed-cap ablation of `scripts/job_scripts/benchmark
 
 Only speed-related settings and run names differ.
 
+Like the main benchmark bundle, every job that constructs Frenet geometry uses `candidate_sampler: frenet_route_continuous`. The 12 m/s bundle therefore differs from the main bundle in speed settings, not route-reference correctness.
+
 ## Physical Speed Contract
 
 Every job explicitly overrides the ego vehicle through MetaDrive's flexible per-agent configuration:

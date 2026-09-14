@@ -53,12 +53,23 @@ nominal-planning v2 variant:
 | native controller | SB3 categorical | ignored |
 | native controller | BDP | `one_hot` |
 | native controller | BDP | `native_action_frenet` |
+| native controller | BDP | `frenet_route_continuous` (MetaDrive route-aware) |
 | Frenet PID | SB3 categorical | ignored |
 | Frenet PID | BDP | `one_hot` |
 | Frenet PID | BDP | `frenet` |
+| Frenet PID | builtin or BDP | `frenet_route_continuous` (MetaDrive route-aware) |
 | Frenet PID v2 | SB3 categorical | ignored |
 | Frenet PID v2 | BDP | `one_hot` |
 | Frenet PID v2 | BDP | `frenet` |
+| Frenet PID v2 | builtin or BDP | `frenet_route_continuous` (MetaDrive route-aware) |
+
+For MetaDrive, `frenet` and `native_action_frenet` preserve the original
+single-lane-segment reference for checkpoint compatibility. The active
+benchmark bundles use `frenet_route_continuous`: `bdp_benchmark` stitches the
+remaining current lane to connected successor lanes on MetaDrive's assigned
+route. Candidate count, order, horizon, and feature width do not change.
+Builtin Frenet-PID reads this setting as an environment geometry selector; it
+does not receive candidate tensors.
 
 HighwayEnv native and Frenet-PID modes use the same five semantic actions:
 
@@ -304,11 +315,11 @@ and blue for relatively high scores. The selected candidate is always green
 and thicker. In Frenet-PID mode, a yellow dot marks the exact nearest-plus-
 lookahead waypoint used by the PID tracker.
 
-For structured `frenet` or `native_action_frenet` BDP models, the plotted
-trajectory features are the same rows passed to the policy. For `one_hot` and
-built-in categorical models, the policy receives action-label features/logits;
-the plotted trajectories are the corresponding action geometry, not input
-geometry that the model processed.
+For structured `frenet`, `native_action_frenet`, or
+`frenet_route_continuous` BDP models, the plotted trajectory features are the
+same rows passed to the policy. For `one_hot` and built-in categorical models,
+the policy receives action-label features/logits; the plotted trajectories are
+the corresponding action geometry, not input geometry that the model processed.
 
 The score helper returns PyTorch categorical distribution scores from the same
 forward pass used to select the action. PyTorch exposes these as normalized log

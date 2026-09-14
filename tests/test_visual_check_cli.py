@@ -27,6 +27,15 @@ def test_visual_check_uses_exact_structured_candidate_rows() -> None:
     np.testing.assert_allclose(features, _candidate_set().features)
 
 
+def test_visual_check_uses_route_continuous_candidate_rows() -> None:
+    args = SimpleNamespace(policy_mode="bdp", candidate_sampler="frenet_route_continuous")
+    observation = {"candidates": np.asarray([[[0.1, 0.2], [0.3, 0.4]]], dtype=np.float32)}
+
+    features = _candidate_features_for_observation(args, _candidate_set(), observation)
+
+    np.testing.assert_allclose(features, _candidate_set().features)
+
+
 def test_visual_check_rejects_structured_feature_mismatch() -> None:
     args = SimpleNamespace(policy_mode="bdp", candidate_sampler="native_action_frenet")
     observation = {"candidates": np.asarray([[[9.0, 9.0], [0.3, 0.4]]], dtype=np.float32)}
