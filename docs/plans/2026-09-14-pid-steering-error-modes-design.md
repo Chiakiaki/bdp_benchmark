@@ -12,8 +12,9 @@ trajectory references. Existing behavior remains the default.
 clear target bookkeeping. It always clears each PID controller's previous error,
 so the derivative term cannot spike from comparing errors belonging to different
 trajectories. A new `pid_integral_reset_on_reference_change` option controls
-whether accumulated steering and speed integrals are also cleared. Full tracker
-reset at episode boundaries always clears both integral and derivative state.
+whether the accumulated steering integral is also cleared. The speed PID still
+resets completely at every reference change. Full tracker reset at episode
+boundaries always clears both integral and derivative state.
 
 The option defaults to `true`, reproducing the current complete reset on every
 reference replacement. Setting it to `false` preserves only integral state.

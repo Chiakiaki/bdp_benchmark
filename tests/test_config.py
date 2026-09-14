@@ -119,6 +119,21 @@ pid:
     assert resolved_config(args)["pid"]["pid_integral_reset_on_reference_change"] is False
 
 
+@pytest.mark.parametrize(
+    ("yaml_value", "message"),
+    [
+        ("pid_steering_error_mode: typo", "pid_steering_error_mode"),
+        ('pid_integral_reset_on_reference_change: "false"', "must be a boolean"),
+    ],
+)
+def test_pid_steering_yaml_rejects_invalid_values(tmp_path: Path, yaml_value: str, message: str) -> None:
+    config_path = tmp_path / "invalid_pid.yaml"
+    config_path.write_text(f"pid:\n  {yaml_value}\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        parse_args(["--config", str(config_path)])
+
+
 def test_all_reproducible_job_configs_parse() -> None:
     job_root = Path(__file__).resolve().parents[1] / "scripts" / "job_scripts"
     jobs = sorted(job_root.rglob("*.yaml"))

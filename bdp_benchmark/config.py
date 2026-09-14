@@ -103,7 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--pid_integral_reset_on_reference_change",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Reset PID integrals when replacing a trajectory; derivative history always resets.",
+        help="Reset the steering PID integral when replacing a trajectory; derivative history always resets.",
     )
     parser.add_argument("--pid_heading_kp", type=float, default=1.2)
     parser.add_argument("--pid_heading_ki", type=float, default=0.0)
@@ -152,6 +152,12 @@ def validate_args(args: argparse.Namespace) -> argparse.Namespace:
         raise ValueError("minimum_target_speed_mps must be non-negative")
     if args.maximum_target_speed_mps <= args.minimum_target_speed_mps:
         raise ValueError("maximum_target_speed_mps must exceed minimum_target_speed_mps")
+    if args.pid_steering_error_mode not in STEERING_ERROR_MODES:
+        raise ValueError(
+            f"pid_steering_error_mode must be one of {STEERING_ERROR_MODES}, got {args.pid_steering_error_mode!r}"
+        )
+    if not isinstance(args.pid_integral_reset_on_reference_change, bool):
+        raise ValueError("pid_integral_reset_on_reference_change must be a boolean")
     if args.n_envs < 1:
         raise ValueError("n_envs must be at least 1")
     variants = [str(value).strip() for value in args.environment_variants]

@@ -29,7 +29,7 @@
 - Modify: `bdp_benchmark/common/tracking.py`
 
 1. Add failing tests proving reference replacement always resets derivative history.
-2. Add failing tests proving integral state is preserved only when configured, while episode reset always clears it.
+2. Add failing tests proving steering integral state is preserved only when configured, speed state still resets, and episode reset always clears both.
 3. Split internal PID reset operations into full reset and reference-change reset.
 4. Run the focused tests.
 

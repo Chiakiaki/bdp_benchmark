@@ -21,8 +21,6 @@ STEERING_ERROR_MODES = (
 @dataclass(frozen=True)
 class TrackerConfig:
     lookahead_points: int = 2
-    steering_error_mode: str = "combined"
-    integral_reset_on_reference_change: bool = True
     heading_kp: float = 1.2
     heading_ki: float = 0.0
     heading_kd: float = 0.08
@@ -33,6 +31,8 @@ class TrackerConfig:
     max_steering_rad: float = 0.7
     max_accel_mps2: float = 5.0
     max_decel_mps2: float = 8.0
+    steering_error_mode: str = "combined"
+    integral_reset_on_reference_change: bool = True
 
     def __post_init__(self) -> None:
         if self.lookahead_points < 0:
@@ -92,11 +92,11 @@ class TrajectoryPIDTracker:
         self.reference = reference.copy()
         self.last_target_index = None
         self.last_target_point = None
-        for controller in (self._steering_pid, self._speed_pid):
-            if self.config.integral_reset_on_reference_change:
-                controller.reset()
-            else:
-                controller.reset_derivative()
+        if self.config.integral_reset_on_reference_change:
+            self._steering_pid.reset()
+        else:
+            self._steering_pid.reset_derivative()
+        self._speed_pid.reset()
 
     def _target(self, ego: EgoState) -> tuple[int, np.ndarray]:
         if self.reference is None:

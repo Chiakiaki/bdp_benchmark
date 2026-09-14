@@ -96,7 +96,7 @@ def test_tracker_rejects_unknown_steering_error_mode() -> None:
         TrackerConfig(steering_error_mode="unknown")
 
 
-def test_reference_change_can_preserve_integrals_but_always_resets_derivatives() -> None:
+def test_reference_change_can_preserve_steering_integral_but_resets_derivatives_and_speed_pid() -> None:
     tracker = TrajectoryPIDTracker(
         TrackerConfig(
             integral_reset_on_reference_change=False,
@@ -117,7 +117,8 @@ def test_reference_change_can_preserve_integrals_but_always_resets_derivatives()
     tracker.set_reference(_trajectory(y=-1.0, speed=6.0))
 
     assert tracker._steering_pid.integral == steering_integral
-    assert tracker._speed_pid.integral == speed_integral
+    assert speed_integral != 0.0
+    assert tracker._speed_pid.integral == 0.0
     assert tracker._steering_pid.previous_error is None
     assert tracker._speed_pid.previous_error is None
 
@@ -149,3 +150,21 @@ def test_episode_reset_clears_preserved_integrals() -> None:
     assert tracker._speed_pid.integral == 0.0
     assert tracker._steering_pid.previous_error is None
     assert tracker._speed_pid.previous_error is None
+
+
+def test_tracker_config_preserves_existing_positional_field_order() -> None:
+    config = TrackerConfig(3, 1.3, 0.1, 0.2, 0.4, 1.1, 0.2, 0.3, 0.8, 6.0, 9.0)
+
+    assert config.lookahead_points == 3
+    assert config.heading_kp == 1.3
+    assert config.heading_ki == 0.1
+    assert config.heading_kd == 0.2
+    assert config.cross_track_kp == 0.4
+    assert config.speed_kp == 1.1
+    assert config.speed_ki == 0.2
+    assert config.speed_kd == 0.3
+    assert config.max_steering_rad == 0.8
+    assert config.max_accel_mps2 == 6.0
+    assert config.max_decel_mps2 == 9.0
+    assert config.steering_error_mode == "combined"
+    assert config.integral_reset_on_reference_change is True
