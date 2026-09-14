@@ -86,10 +86,14 @@ The settings are based on the official upstream examples:
   batch size `64`, ten epochs, learning rate `5e-4`, `gamma=0.8`, and `[256,
   256]` actor/critic layers. Its `2e4` timesteps are a short demonstration;
   these jobs use `2e6` for an actual comparison.
-- MetaDrive's generalization PPO example uses a 1000-step horizon, five rollout
-  workers, approximately 20,000-step training batches, minibatch `256`, ten
-  epochs, learning rate `3e-4`, `gamma=0.99`, and `lambda=0.95`. The jobs use
-  `n_steps=4000` and five environments, giving a 20,000-sample rollout.
+- The [MetaDrive paper](https://arxiv.org/abs/2109.12674) PPO baseline uses an
+  8,000-sample train batch, minibatch `100`, 20 epochs, learning rate `5e-5`,
+  `gamma=0.99`, `lambda=0.95`, and
+  clipping at `0.2`. The active jobs reproduce that optimization schedule with
+  `n_steps=2000` and four environments for lower host RAM use. This gives 80
+  minibatches and 1,600 optimizer updates per rollout. `log_interval=1` writes
+  TensorBoard values every 8,000 transitions. `target_kl` remains unset because
+  RLlib's KL coefficient is not equivalent to SB3's early-stop threshold.
 
 Run one job from the benchmark root:
 

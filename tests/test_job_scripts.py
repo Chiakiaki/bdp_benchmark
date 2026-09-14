@@ -118,7 +118,7 @@ def test_metadrive_comparison_launchers_are_valid_and_ordered(
     assert source.count('"$@"') == 2
 
 
-def test_active_metadrive_benchmarks_use_requested_parallel_batch_configuration() -> None:
+def test_active_metadrive_benchmarks_use_paper_aligned_ppo_configuration() -> None:
     names = (
         "metadrive_frenet_pid_bdp_frenet_benchmark.yaml",
         "metadrive_frenet_pid_builtin_benchmark.yaml",
@@ -132,5 +132,16 @@ def test_active_metadrive_benchmarks_use_requested_parallel_batch_configuration(
         config = yaml.safe_load((JOB_ROOT / name).read_text(encoding="utf-8"))
         algorithm = config["algorithm"]
         assert algorithm["n_envs"] == 8, name
-        assert algorithm["batch_size"] == 1000, name
-        assert algorithm["trpo_timesteps_per_batch"] * algorithm["n_envs"] % algorithm["batch_size"] == 0, name
+        assert algorithm["trpo_timesteps_per_batch"] == 1000, name
+        assert algorithm["batch_size"] == 100, name
+        assert algorithm["ppo_epochs"] == 20, name
+        assert algorithm["learning_rate"] == 5.0e-5, name
+        assert algorithm["gamma"] == 0.99, name
+        assert algorithm["gae_lambda"] == 0.95, name
+        assert algorithm["ppo_clip_range"] == 0.2, name
+        rollout_size = algorithm["trpo_timesteps_per_batch"] * algorithm["n_envs"]
+        assert rollout_size == 8000, name
+        assert rollout_size // algorithm["batch_size"] * algorithm["ppo_epochs"] == 1600, name
+        assert algorithm["num_timesteps"] // rollout_size * 1600 == 400_000, name
+        assert config["environment"]["environment_config"]["store_map"] is False, name
+        assert config["logging"]["log_interval"] == 1, name
