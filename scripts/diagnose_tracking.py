@@ -14,7 +14,6 @@ for path in (ROOT, ROOT.parent):
     sys.path.insert(0, str(path))
 
 import numpy as np
-from stable_baselines3 import PPO
 from critic_based_rl.inference import predict_discrete_with_scores
 from bdp_benchmark.config import parse_args, resolved_config
 from bdp_benchmark.env_factory import make_single_env
@@ -22,6 +21,8 @@ from bdp_benchmark.tracking_diagnostics import TrackingRecorder, tracking_errors
 from bdp_benchmark.common.tracking_geometry import project_trajectory, sample_trajectory
 from bdp_benchmark.metadrive.route_reference import resolve_route_lanes, build_route_reference
 from bdp_benchmark.visualization import make_overlay
+from bdp_benchmark.metadrive.env import FRENET_PID_MODES
+from bdp_benchmark.runner import _load_evaluation_model
 
 
 def main():
@@ -38,7 +39,7 @@ def main():
     if options.tracking_lane_speed_mps is not None and options.tracking_lane_speed_mps <= 0:
         parser.error("--tracking_lane_speed_mps must be positive")
     args = parse_args(rest)
-    if args.simulator != 'metadrive' or args.trajectory_execution_mode not in ('frenet_pid', 'frenet_pid_v2'):
+    if args.simulator != 'metadrive' or args.trajectory_execution_mode not in FRENET_PID_MODES:
         parser.error("Tracking diagnostics require a MetaDrive Frenet-PID job")
     args.run_mode = "train"  # Rendering is explicitly opt-in for this diagnostic.
     args.n_envs = 1
@@ -53,8 +54,7 @@ def main():
     values, episodes = [], []
     started = time.perf_counter()
     try:
-        model = None if options.tracking_center_action or options.tracking_lane_speed_mps is not None else PPO.load(
-            args.model_path, env=env, device=args.device)
+        model = None if options.tracking_center_action or options.tracking_lane_speed_mps is not None else _load_evaluation_model(args, env)
         for seed in options.tracking_seeds:
             obs, _ = env.reset(seed=seed)
             lane_reference = None
@@ -103,6 +103,8 @@ def main():
                               steering_saturated=float(abs(raw.env.agent.steering) >= 0.99),
                               throttle_saturated=float(abs(raw.env.agent.throttle_brake) >= 0.99))
                 errors.update(raw._pid_policy().tracker.last_diagnostics)
+                if "target_speed_mps" in errors:
+                    errors["command_speed_error_mps"] = abs(errors["target_speed_mps"] - actual.speed)
                 row = {"seed": seed, "step": step, "action": action, **errors,
                        "terminated": terminated, "truncated": truncated,
                        "route_completion": float(info.get("route_completion", 0.0))}
@@ -127,7 +129,8 @@ def main():
     summary = {key: {"mean": float(np.mean([v[key] for v in values])),
                      "p95": float(np.percentile([v[key] for v in values], 95))} for key in values[0]}
     summary.update(episodes=episodes, steps=len(values), seconds=time.perf_counter() - started,
-                   config=resolved_config(args))
+                   config=resolved_config(args), model_path=None if model is None else args.model_path,
+                   tracking_seeds=options.tracking_seeds, tracking_steps=options.tracking_steps)
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps({k: v for k, v in summary.items() if k != "config"}, indent=2))
 

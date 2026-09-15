@@ -8,6 +8,8 @@ from typing import Any
 
 import numpy as np
 
+from .contracts import EgoState
+
 
 @dataclass(frozen=True)
 class FrenetState:
@@ -184,6 +186,37 @@ def generate_frenet_trajectories(
     s_ddot = _evaluate(longitudinal, times, derivative=2)
     d_ddot = _evaluate(lateral, times, derivative=2)
     return np.stack([s, d, s_dot, d_dot, s_ddot, d_ddot], axis=-1)
+
+
+def generate_constant_curvature_trajectories(
+    origin: EgoState,
+    target_speed: np.ndarray,
+    curvature: np.ndarray,
+    *,
+    horizon_s: float,
+    sample_count: int,
+) -> np.ndarray:
+    """Circular center paths [K,H,(x,y,tangent,speed)], using the Frenet speed law."""
+    target_speed, curvature = np.broadcast_arrays(
+        np.asarray(target_speed, dtype=np.float64), np.asarray(curvature, dtype=np.float64),
+    )
+    if target_speed.ndim != 1 or not np.isfinite(curvature).all():
+        raise ValueError("curvature and target_speed must describe a finite one-dimensional candidate grid")
+    longitudinal = generate_frenet_trajectories(
+        FrenetState(0.0, origin.speed, 0.0, 0.0, 0.0, 0.0),
+        np.zeros_like(target_speed), target_speed, horizon_s=horizon_s, sample_count=sample_count,
+    )
+    distance = longitudinal[..., 0]
+    turn = curvature[:, None] * distance
+    # Chord form avoids dividing by curvature and has an exact straight-path limit.
+    chord = distance * np.sinc(turn / (2.0 * np.pi))
+    direction = origin.heading + turn / 2.0
+    return np.stack([
+        origin.x + chord * np.cos(direction),
+        origin.y + chord * np.sin(direction),
+        origin.heading + turn,
+        longitudinal[..., 2],
+    ], axis=-1)
 
 
 def frenet_to_world(

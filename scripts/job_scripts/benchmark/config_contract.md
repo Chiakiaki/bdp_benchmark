@@ -2,7 +2,7 @@
 
 This document records the active MetaDrive benchmark configuration and distinguishes it from both the bundled MetaDrive PPO demo and the configuration stated in the MetaDrive paper. It is the reference for comparing builtin categorical PPO with candidate-scoring BDP policies.
 
-The active contract covers the seven training jobs:
+The active contract covers the nine training jobs:
 
 - `metadrive_native_builtin_benchmark.yaml`
 - `metadrive_native_continuous_builtin_benchmark.yaml`
@@ -11,12 +11,18 @@ The active contract covers the seven training jobs:
 - `metadrive_frenet_pid_bdp_frenet_benchmark.yaml`
 - `metadrive_frenet_pid_v2_builtin_benchmark.yaml`
 - `metadrive_frenet_pid_v2_bdp_frenet_benchmark.yaml`
+- `metadrive_frenet_pid_v3_builtin_benchmark.yaml`
+- `metadrive_frenet_pid_v3_bdp_frenet_benchmark.yaml`
+
+Two additional `metadrive_frenet_pid_v3_legacy_*` YAMLs preserve the former v3
+distance-retiming/direct-speed experiment for comparison; they do not replace
+the active revised-v3 pair.
 
 Files under `scripts/job_scripts/example/` are historical examples and are not required to follow the active observation or PID contract.
 
 ## PPO Training Contract
 
-All six active jobs use the paper-aligned PPO optimization settings. The iteration and update counts below assume this repository's fixed budget of 2,000,000 environment transitions.
+All nine active jobs use the paper-aligned PPO optimization settings. The iteration and update counts below assume this repository's fixed budget of 2,000,000 environment transitions.
 
 | Quantity | Earlier benchmark | Current adopted | Paper-aligned target |
 | --- | ---: | ---: | ---: |
@@ -143,7 +149,7 @@ The main benchmark retains the paper and demo physical ceiling:
 
 All Frenet-PID jobs cap target trajectories at `22.222222 m/s`. Native BDP applies the same cap to its action-conditioned trajectory descriptors. Native builtin PPO has no target-speed descriptor and is constrained only by the physical vehicle ceiling.
 
-The Frenet speed offset remains `5.0 m/s` in this bundle. Target values are clipped at the physical maximum, so generated references cannot request speeds above what the simulated ego vehicle can produce under power.
+The v1/v2 Frenet speed offset remains `5.0 m/s` in this bundle. V3 instead uses the rate-based speed command described below. Terminal targets are clipped to the configured target-speed ceiling; actual speed and intermediate lane-change motion are not guaranteed by that ceiling.
 
 The separate `scripts/job_scripts/benchmark_metadrive_12mps` bundle is a controller-stability ablation with a 43.2 km/h physical limit, a 12 m/s trajectory-target limit, and a 2.5 m/s Frenet speed delta.
 
@@ -160,6 +166,40 @@ The benchmark intentionally contains different execution MDPs. Comparisons are v
 | `frenet_pid` BDP | 15 | Scores the same 15 Frenet trajectories |
 | `frenet_pid_v2` builtin | 15 | Same action set, with nominal-state trajectory planning |
 | `frenet_pid_v2` BDP | 15 | Scores the same nominal-state trajectories |
+| `frenet_pid_v3` builtin | 25 | Nominal pose, actual initial speed, ramp/cruise timing, 15 lane + 10 circular candidates |
+| `frenet_pid_v3` BDP | 25 | Scores the same v3 candidate set |
+| `frenet_pid_v3_legacy` builtin / BDP | 25 | Preserved distance-retimed paths and direct terminal-speed PI |
+
+### V3 Timing and Launch
+
+The 80 km/h v3 jobs were merged from the former `benchmark_metadrive` folder
+into this bundle. Both enable `frenet_include_curvature_candidates: true` and
+`frenet_curvature_steering_fraction: 0.9`. They retain the shared 275-dimensional
+state, reward definition, PPO settings, and vehicle physical ceiling. BDP's
+candidate tensor is now `[25, 55]`; this is a candidate-count change, not an
+increase in the state or per-candidate feature width.
+
+V3 uses command time `1.0 s`, rate `8.0 m/s^2`, and configurable scales
+`[-1, -0.5, 0, 0.5, 1]`. Lane geometry combines a longitudinal ramp/cruise
+coordinate with the existing timed lateral quintic. The speed column is desired
+V(t), and PI previews it at `t_projected + pid_speed_preview_s` (0.4 s). It is not
+an exact timed dynamics prediction and does not receive a direct terminal target.
+See [the v3 contract](../../../docs/frenet_pid_v3.md).
+
+The old distance-consistent geometry and direct target are preserved under
+`frenet_pid_v3_legacy`. Use the legacy YAML copies or override old saved configs
+with `--trajectory_execution_mode frenet_pid_v3_legacy`; archived logs are not
+rewritten. State, reward, vehicle and feature-dimension contracts are unchanged.
+
+From the repository root, train BDP then builtin sequentially:
+
+```bash
+./scripts/job_scripts/benchmark/run_metadrive_frenet_pid_v3_comparison.sh
+```
+
+Sharing physical limits and state/reward contracts does not make different
+execution modes identical MDPs. Report comparisons within matched BDP/builtin
+pairs; a v2 checkpoint tested with v3 timing is a transfer/debug experiment.
 
 The paper's main single-agent PPO benchmark uses continuous normalized steering and throttle/brake. `metadrive_native_continuous_builtin_benchmark.yaml` implements that action contract while preserving the main bundle's other settings. It is an official-style action-space reference, not a like-for-like algorithm ablation against the finite-candidate BDP policies.
 
@@ -185,7 +225,7 @@ pid:
 
 Adaptive pursuit uses an interpolated metric lookahead and rear-axle bicycle geometry. Speed PI state persists across replans, with saturation protection and the correct 0.10-second MetaDrive policy interval. `tracking_diagnostics: true` records rollout mean errors in TensorBoard and `diagnostics/tracking_rollouts.csv`; it changes neither observation nor reward. Legacy steering fields retained in the YAML are inactive in this mode. The lateral-only visual preset remains a legacy controller reference.
 
-See [controller measurements and reproduction](../../../docs/adaptive_pursuit_tracking.md) for the experiments and parameter semantics. The 12 m/s bundle retains its earlier legacy tracker and is no longer a speed-only ablation of these newly tuned 80 km/h jobs.
+See [controller measurements and reproduction](../../../docs/adaptive_pursuit_tracking.md) for the experiments and parameter semantics. The 12 m/s bundle also uses adaptive pursuit, with its own speed and candidate-layout settings.
 
 Native-controller jobs do not use this PID block.
 

@@ -29,6 +29,11 @@ def generation_config_from_args(args) -> CandidateGenerationConfig:
         maximum_target_speed_mps=float(args.maximum_target_speed_mps),
         lane_change_width_scale=float(args.frenet_lane_change_width_scale),
         speed_delta_mps=float(args.frenet_speed_delta_mps),
+        include_curvature_candidates=args.frenet_include_curvature_candidates,
+        curvature_steering_fraction=float(args.frenet_curvature_steering_fraction),
+        speed_command_time_s=float(args.frenet_speed_command_time_s),
+        speed_delta_rate_mps2=float(args.frenet_speed_delta_rate_mps2),
+        speed_action_scales=tuple(args.frenet_speed_action_scales),
     )
 
 

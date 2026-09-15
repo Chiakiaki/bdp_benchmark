@@ -87,12 +87,13 @@ HighwayEnv native and Frenet-PID modes use the same five semantic actions:
 ```
 
 MetaDrive native mode preserves its default 5 steering x 5 throttle grid. Its
-Frenet-PID modes instead use 15 actions: for each of five target-speed offsets,
+Frenet-PID modes default to 15 actions: for each of five target-speed offsets,
 choose the left adjacent, current, or right adjacent lane center. Missing
 boundary lanes are represented by a virtual center one current-lane width away,
 which keeps the action space fixed. Comparisons are like-for-like only within
-the same simulator and execution mode. `frenet_pid_v2` uses the same 15-action
-space as `frenet_pid` but changes the candidate planning origin.
+the same simulator and execution mode. `frenet_pid_v2` uses the same candidate
+layout as `frenet_pid` but changes the planning origin. The optional curvature
+extension described below increases both to 25 actions.
 
 ## Train
 
@@ -378,6 +379,33 @@ current_speed + [-1.0, -0.5, 0.0, 0.5, 1.0] * frenet_speed_delta_mps
 Lateral choice changes fastest within each speed row. Structured BDP input is
 `[E, 15, 5*H]`; with `H=11`, this is `[E, 15, 55]`. One-hot BDP input is
 `[E, 15, 15]`.
+
+MetaDrive Frenet-PID modes optionally append ten circular candidates with
+`frenet_include_curvature_candidates: true`. The original 15 labels are
+unchanged; actions 15..24 add a left/right constant-curvature pair at each of the
+same five endpoint speeds. `frenet_curvature_steering_fraction: 0.9` uses 90% of
+the smaller vehicle/PID steering-angle limit, converted to center-path curvature.
+Generation remains vectorized over candidates and samples; execution reuses the
+same actual-state PID. Native actions are unaffected. The switch defaults to
+false; K=25 checkpoints and jobs must use matching candidate configuration.
+
+The [12 m/s stability bundle](scripts/job_scripts/benchmark_metadrive_12mps/config_contract.md)
+enables this option in its four Frenet-PID training jobs and documents action
+ordering, nominal speed endpoints, tire-slip limitations, and launchers for all
+seven comparisons. `--no-frenet_include_curvature_candidates` restores K=15 for
+an isolated speed-cap experiment. Steering margin does not guarantee high-speed
+trackability, and the Frenet slowdown target is not an immediate full-brake action.
+
+`trajectory_execution_mode: frenet_pid_v3` uses independent longitudinal
+ramp/cruise geometry and time-based quintic lateral geometry. Its speed column
+is desired V(t), not speed derived from the path; PI previews that column using
+`pid_speed_preview_s`. Nominal XY/heading and actual measured initial speed are
+retained. The former distance-retimed/direct-speed implementation is preserved
+as `frenet_pid_v3_legacy`; v1/v2 and native modes are unchanged. See
+[the revised v3 contract](docs/frenet_pid_v3.md) and
+[the legacy contract](docs/frenet_pid_v3_legacy.md). Older saved v3 configs need
+`--trajectory_execution_mode frenet_pid_v3_legacy` to retain their old semantics;
+unchanged tensor dimensions do not perform that migration automatically.
 
 Native candidate geometry uses the actual chassis heading and scalar speed to
 initialize its Frenet motion direction. This is separate from the simulator's

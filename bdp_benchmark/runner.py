@@ -14,6 +14,7 @@ import yaml
 from critic_based_rl.model import get_algorithm_class
 from critic_based_rl.runner_core import train_sb3_model
 from critic_based_rl.inference import predict_discrete_with_scores
+from critic_based_rl.checkpoint_compat import load_sb3_model_allow_bdp_candidate_count_change
 
 from .config import resolved_config
 from .env_factory import make_vector_env
@@ -132,6 +133,12 @@ def collect_evaluation_returns(
     return returns_by_variant
 
 
+def _load_evaluation_model(args, env):
+    if bool(getattr(args, "allow_bdp_candidate_count_change", False)):
+        return load_sb3_model_allow_bdp_candidate_count_change(args, env, args.model_path)
+    return get_algorithm_class(args.sb3_algorithm).load(args.model_path, env=env, device=args.device)
+
+
 def run_evaluation(args) -> list[float]:
     if not args.model_path:
         raise ValueError("--model_path is required for evaluation")
@@ -140,7 +147,7 @@ def run_evaluation(args) -> list[float]:
     log_dir = Path(args.log_path).expanduser() if args.log_path else PROJECT_ROOT / "evaluation"
     log_dir.mkdir(parents=True, exist_ok=True)
     env = make_vector_env(args, log_dir=log_dir, is_train=False)
-    model = get_algorithm_class(args.sb3_algorithm).load(args.model_path, env=env, device=args.device)
+    model = _load_evaluation_model(args, env)
     configured_variants = list(getattr(args, "environment_variants", ()) or ())
     variant_ids = configured_variants if configured_variants else [str(args.env_id)]
     try:
@@ -201,7 +208,7 @@ def run_visual_check(args) -> list[float]:
     log_dir = Path(args.log_path).expanduser() if args.log_path else PROJECT_ROOT / "visual_check"
     log_dir.mkdir(parents=True, exist_ok=True)
     env = make_vector_env(args, log_dir=log_dir, is_train=False)
-    model = get_algorithm_class(args.sb3_algorithm).load(args.model_path, env=env, device=args.device)
+    model = _load_evaluation_model(args, env)
     benchmark_env = _unwrap_visual_env(env)
     returns: list[float] = []
     running_return = np.zeros(env.num_envs, dtype=np.float64)

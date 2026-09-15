@@ -1,12 +1,12 @@
-# BDP-Frenet pair for metadrive_frenet_pid_v2_builtin_benchmark.yaml. Candidate
-# planning uses x_nominal while MetaDrive and PID execution use x_actual.
+# BDP-Frenet pair for metadrive_frenet_pid_v3_legacy_builtin_benchmark.yaml.
+# V3 legacy: 25 distance-retimed candidates, actual speed, and direct v_target PI.
 runtime:
   run_mode: train
-  run_name: metadrive_frenet_pid_v2_bdp_frenet_curvature25_12mps_benchmark
+  run_name: metadrive_frenet_pid_v3_legacy_bdp_frenet_adaptive_pursuit_benchmark
 environment:
   simulator: metadrive
   env_id: MetaDrive-v0
-  trajectory_execution_mode: frenet_pid_v2
+  trajectory_execution_mode: frenet_pid_v3_legacy
   environment_config:
     use_render: false
     out_of_route_done: true
@@ -18,7 +18,7 @@ environment:
       default_agent:
         use_special_color: true
         spawn_lane_index: [">", ">>", 0]
-        max_speed_km_h: 43.2
+        max_speed_km_h: 80.0
     map: 3
     traffic_density: 0.1
     random_traffic: false
@@ -34,17 +34,19 @@ frenet:
   trajectory_sample_count: 11
   position_feature_scale_m: 50.0
   speed_feature_scale_mps: 40.0
-  frenet_speed_delta_mps: 2.5
-  maximum_target_speed_mps: 12.0
-  frenet_include_curvature_candidates: true # 15 lane targets + 10 left/right curves sharing the five speeds.
-  frenet_curvature_steering_fraction: 0.9 # Fraction of min(vehicle, PID) steering limit; not a tire-grip guarantee.
+  frenet_speed_command_time_s: 1.0
+  frenet_speed_delta_rate_mps2: 8.0
+  frenet_speed_action_scales: [-1, -0.5, 0, 0.5, 1]
+  maximum_target_speed_mps: 22.222222
+  frenet_include_curvature_candidates: true # 15 lane targets plus 10 left/right circular candidates.
+  frenet_curvature_steering_fraction: 0.9 # Fraction of min(vehicle, PID) steering limit; not a grip guarantee.
 pid:
   pid_controller_mode: adaptive_pursuit # Rear-axle pure pursuit plus persistent speed PI.
   pid_lookahead_time_s: 0.7 # Lookahead grows with actual vehicle speed.
   pid_min_lookahead_m: 3.0
   pid_max_lookahead_m: 12.0
   pid_pursuit_gain: 1.0
-  pid_speed_preview_s: 0.4 # Read desired speed this far ahead in trajectory time.
+  pid_speed_preview_s: 0.4 # Ignored in v3_legacy; PI uses cached v_target directly.
   pid_lookahead_points: 2
   pid_steering_error_mode: lateral_only
   pid_integral_reset_on_reference_change: false
@@ -82,6 +84,7 @@ model_architecture:
   policy_layers: [256, 256]
   value_layers: [256, 256]
 logging:
+  tracking_diagnostics: true # Rollout means only; no per-step sample retention.
   log_path: logs/benchmark
   log_interval: 1
   save_freq: 200000

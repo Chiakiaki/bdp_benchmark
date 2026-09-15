@@ -58,6 +58,11 @@ that engine force produces exactly that acceleration in the physics engine.
 
 ## Measurement
 
+The subsequent v3 arc-to-straight check retained these gains after tuning and
+separate-seed validation. See [the v3 measurements](v3_arc_straight_pid_check.md)
+for the tested alternatives, route fixtures, and limitations of frozen-selector
+transfer comparisons.
+
 `tracking_diagnostics: true` adds rollout averages through the existing SB3
 callback/logger. They appear under `tracking/` in CLI/TensorBoard and in
 `diagnostics/tracking_rollouts.csv`. Only scalar sums and a sample count are

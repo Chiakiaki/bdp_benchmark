@@ -6,7 +6,39 @@ import pytest
 import yaml
 
 from bdp_benchmark.config import parse_args, resolved_config, validate_args
-from bdp_benchmark.env_factory import tracker_config_from_args
+from bdp_benchmark.env_factory import generation_config_from_args, tracker_config_from_args
+
+
+def test_curvature_candidates_yaml_cli_and_effective_config(tmp_path):
+    config_path = tmp_path / "curves.yaml"
+    config_path.write_text(yaml.safe_dump({
+        "environment": {"simulator": "metadrive", "trajectory_execution_mode": "frenet_pid_v2"},
+        "frenet": {"frenet_include_curvature_candidates": True, "frenet_curvature_steering_fraction": 0.9},
+    }))
+    args = parse_args(["--config", str(config_path), "--frenet_curvature_steering_fraction", "0.8"])
+    generation = generation_config_from_args(args)
+    assert generation.include_curvature_candidates is True
+    assert generation.curvature_steering_fraction == 0.8
+    resolved = resolved_config(args)
+    assert resolved["frenet"]["frenet_include_curvature_candidates"] is True
+    assert resolved["frenet"]["frenet_curvature_steering_fraction"] == 0.8
+    config_path.write_text(yaml.safe_dump(resolved))
+    assert generation_config_from_args(parse_args(["--config", str(config_path)])) == generation
+    disabled = parse_args(["--config", str(config_path), "--no-frenet_include_curvature_candidates"])
+    assert generation_config_from_args(disabled).include_curvature_candidates is False
+    assert parse_args([]).frenet_include_curvature_candidates is False
+
+
+@pytest.mark.parametrize("extra", [[], ["--simulator", "metadrive"], ["--trajectory_execution_mode", "frenet_pid"]])
+def test_curvature_candidates_reject_unsupported_execution(extra):
+    with pytest.raises(ValueError, match="curvature.*MetaDrive Frenet-PID"):
+        parse_args([*extra, "--frenet_include_curvature_candidates"])
+
+
+@pytest.mark.parametrize("value", ["0", "-0.1", "1.1", "nan", "inf"])
+def test_curvature_steering_fraction_validation(value):
+    with pytest.raises(ValueError, match="curvature_steering_fraction"):
+        parse_args(["--frenet_curvature_steering_fraction", value])
 
 
 def test_cli_overrides_yaml_and_is_reflected_in_resolved_config(tmp_path: Path) -> None:

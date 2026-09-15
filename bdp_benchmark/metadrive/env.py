@@ -15,8 +15,10 @@ from bdp_benchmark.common.nominal import NominalTrajectoryState
 from bdp_benchmark.common.tracking import TrackerConfig
 
 from .adapter import MetaDriveAdapter
-from .adapter import FRENET_PID_ACTION_COUNT
-from .policy import MetaDriveFrenetPIDPolicy
+from .policy import MetaDriveFrenetPIDPolicy, MetaDriveCurvatureFrenetPIDPolicy
+
+
+FRENET_PID_MODES = ("frenet_pid", "frenet_pid_v2", "frenet_pid_v3", "frenet_pid_v3_legacy")
 
 
 class MetaDriveBenchmarkEnv(gym.Wrapper):
@@ -32,15 +34,24 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
         reference_mode: str = "lane_segment",
         tracking_diagnostics: bool = False,
     ) -> None:
-        if execution_mode not in ("native_controller", "frenet_pid", "frenet_pid_v2"):
+        if execution_mode not in ("native_controller", *FRENET_PID_MODES):
             raise ValueError(f"Unsupported MetaDrive execution mode: {execution_mode}")
+        if execution_mode in ("frenet_pid_v3", "frenet_pid_v3_legacy"):
+            generation_config.validate_v3()
+            reference_mode = "route_continuous"
+        if generation_config.include_curvature_candidates and execution_mode == "native_controller":
+            raise ValueError("curvature candidates require MetaDrive Frenet-PID execution")
+        pid_policy = (
+            MetaDriveCurvatureFrenetPIDPolicy
+            if generation_config.include_curvature_candidates else MetaDriveFrenetPIDPolicy
+        )
         config = dict(env_config or {})
         config["use_render"] = render_mode == "human" or bool(config.get("use_render", False))
         if execution_mode == "native_controller":
             config["discrete_action"] = bool(config.get("discrete_action", True))
             config["use_multi_discrete"] = False
         else:
-            config["agent_policy"] = MetaDriveFrenetPIDPolicy
+            config["agent_policy"] = pid_policy
             config["discrete_action"] = False
         env_classes = {
             "MetaDrive-v0": MetaDriveEnv,
@@ -60,19 +71,24 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
             expected_actions = (
                 int(self.env.config["discrete_steering_dim"]) * int(self.env.config["discrete_throttle_dim"])
                 if execution_mode == "native_controller"
-                else FRENET_PID_ACTION_COUNT
+                else pid_policy.ACTION_COUNT
             )
             if not isinstance(self.action_space, gym.spaces.Discrete) or int(self.action_space.n) != expected_actions:
                 raise RuntimeError(
                     f"MetaDrive action space does not match expected Discrete({expected_actions}): {self.action_space}"
                 )
         self.execution_mode = execution_mode
-        self.adapter = MetaDriveAdapter(self.env, generation_config, reference_mode=reference_mode)
+        self.adapter = MetaDriveAdapter(
+            self.env, generation_config, reference_mode=reference_mode,
+            max_steering_rad=tracker_config.max_steering_rad,
+        )
         self.tracker_config = tracker_config
         self.tracking_diagnostics = tracking_diagnostics
         self._latest_candidates: CandidateSet | None = None
         self._visualizer = None
-        self._nominal_state = NominalTrajectoryState() if execution_mode == "frenet_pid_v2" else None
+        self._nominal_state = NominalTrajectoryState() if execution_mode in (
+            "frenet_pid_v2", "frenet_pid_v3", "frenet_pid_v3_legacy"
+        ) else None
 
     def _pid_policy(self) -> MetaDriveFrenetPIDPolicy:
         policy = self.env.engine.get_policy(self.env.agent.name)
@@ -95,7 +111,7 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
             count = int(self.env.num_scenarios)
             kwargs["seed"] = start + (int(kwargs["seed"]) - start) % count
         result = self.env.reset(**kwargs)
-        if self.execution_mode in ("frenet_pid", "frenet_pid_v2"):
+        if self.execution_mode in FRENET_PID_MODES:
             self._pid_policy().configure_tracker(
                 self.tracker_config, sample_dt=self.adapter.config.horizon_s / (self.adapter.config.sample_count - 1)
             )
@@ -116,11 +132,13 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
         return self._latest_candidates or self.build_candidate_set()
 
     def preview_pid_target(self, candidate_index: int):
-        if self.execution_mode not in ("frenet_pid", "frenet_pid_v2"):
+        if self.execution_mode not in FRENET_PID_MODES:
             return None
         candidates = self.get_visual_candidate_set()
         policy = self._pid_policy()
-        policy.set_reference(candidates.trajectories[int(candidate_index)])
+        index = int(candidate_index)
+        speed = None if candidates.speed_targets is None else float(candidates.speed_targets[index])
+        policy.set_reference(candidates.trajectories[index], speed_target_mps=speed)
         return policy.tracker.preview_target(self.adapter.ego_state())
 
     def set_visual_overlay(self, overlay) -> None:
@@ -142,16 +160,17 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
             self._latest_candidates = None
             return self.env.step(continuous_action)
         action_idx = int(action)
-        if self.execution_mode in ("frenet_pid", "frenet_pid_v2"):
+        if self.execution_mode in FRENET_PID_MODES:
             candidate_set = self._latest_candidates or self.build_candidate_set()
             if action_idx < 0 or action_idx >= candidate_set.trajectories.shape[0]:
                 raise ValueError(f"Invalid candidate action {action_idx}")
             if self._nominal_state is not None:
                 self._nominal_state.commit(candidate_set.trajectories[action_idx])
-            self._pid_policy().set_reference(candidate_set.trajectories[action_idx])
+            speed = None if candidate_set.speed_targets is None else float(candidate_set.speed_targets[action_idx])
+            self._pid_policy().set_reference(candidate_set.trajectories[action_idx], speed_target_mps=speed)
         self._latest_candidates = None
         observation, reward, terminated, truncated, info = self.env.step(action_idx)
-        if self.tracking_diagnostics and self.execution_mode in ("frenet_pid", "frenet_pid_v2"):
+        if self.tracking_diagnostics and self.execution_mode in FRENET_PID_MODES:
             from bdp_benchmark.tracking_diagnostics import tracking_errors
 
             errors = tracking_errors(candidate_set.trajectories[action_idx], self.adapter.ego_state())

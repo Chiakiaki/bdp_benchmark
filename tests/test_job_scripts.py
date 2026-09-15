@@ -12,6 +12,47 @@ METADRIVE_BENCHMARK_JOB_ROOT = JOB_ROOT / "benchmark"
 METADRIVE_12MPS_JOB_ROOT = JOB_ROOT / "benchmark_metadrive_12mps"
 
 
+def test_curvature_candidates_opt_in_in_12mps_jobs_and_80kmh_v3_pair():
+    enabled = []
+    for path in JOB_ROOT.rglob("*.yaml"):
+        config = yaml.safe_load(path.read_text())
+        if config.get("frenet", {}).get("frenet_include_curvature_candidates", False):
+            enabled.append(path)
+            assert path.parent in (METADRIVE_12MPS_JOB_ROOT, METADRIVE_BENCHMARK_JOB_ROOT)
+            if path.parent == METADRIVE_BENCHMARK_JOB_ROOT:
+                assert config["environment"]["trajectory_execution_mode"] in ("frenet_pid_v3", "frenet_pid_v3_legacy")
+            assert config["environment"]["trajectory_execution_mode"] in ("frenet_pid", "frenet_pid_v2", "frenet_pid_v3", "frenet_pid_v3_legacy")
+            assert config["frenet"]["frenet_curvature_steering_fraction"] == 0.9
+    assert len(enabled) == 12
+    for mode in ("frenet_pid", "frenet_pid_v2", "frenet_pid_v3", "frenet_pid_v3_legacy"):
+        a = yaml.safe_load((METADRIVE_12MPS_JOB_ROOT / f"metadrive_{mode}_builtin_benchmark.yaml").read_text())
+        b = yaml.safe_load((METADRIVE_12MPS_JOB_ROOT / f"metadrive_{mode}_bdp_frenet_benchmark.yaml").read_text())
+        for section in ("environment", "frenet", "pid", "algorithm", "logging"):
+            assert a[section] == b[section]
+
+
+def test_12mps_remaining_launcher_covers_other_three_jobs_and_forwards_args(tmp_path):
+    script = METADRIVE_12MPS_JOB_ROOT / "run_metadrive_remaining_comparison.sh"
+    assert subprocess.run(["bash", "-n", str(script)], capture_output=True).returncode == 0
+    source = script.read_text()
+    names = ["metadrive_frenet_pid_bdp_frenet_benchmark.yaml",
+             "metadrive_frenet_pid_builtin_benchmark.yaml",
+             "metadrive_native_continuous_builtin_benchmark.yaml"]
+    assert [source.index(name) for name in names] == sorted(source.index(name) for name in names)
+    assert source.count('"$@"') == 3
+    import os
+
+    # Echo replaces Python: exercise path resolution/forwarding without starting training.
+    result = subprocess.run(["bash", str(script), "--n_envs", "2"], cwd=tmp_path,
+                            env={**os.environ, "BDP_BENCHMARK_PYTHON": "/bin/echo"},
+                            capture_output=True, text=True, check=True)
+    lines = [line for line in result.stdout.splitlines() if line.startswith("scripts/train.py")]
+    assert len(lines) == 3
+    for line, name in zip(lines, names):
+        assert f"benchmark_metadrive_12mps/{name}" in line
+        assert line.endswith("--n_envs 2")
+
+
 def test_highway_mixed_comparison_launcher_is_valid_and_ordered() -> None:
     script = JOB_ROOT / "run_highway_mixed_native_comparison.sh"
 
@@ -209,7 +250,7 @@ def test_active_metadrive_frenet_pid_jobs_share_adaptive_pursuit_configuration()
     for bundle_root in (METADRIVE_BENCHMARK_JOB_ROOT, METADRIVE_12MPS_JOB_ROOT):
         for path in bundle_root.glob("metadrive_*_benchmark.yaml"):
             config = yaml.safe_load(path.read_text(encoding="utf-8"))
-            if config["environment"]["trajectory_execution_mode"] in {"frenet_pid", "frenet_pid_v2"}:
+            if config["environment"]["trajectory_execution_mode"] in {"frenet_pid", "frenet_pid_v2", "frenet_pid_v3", "frenet_pid_v3_legacy"}:
                 jobs.append(path)
                 assert config["pid"] == reference, path
 
@@ -238,9 +279,10 @@ def test_metadrive_bundles_have_consistent_speed_contracts(
 
         mode = config["environment"]["trajectory_execution_mode"]
         policy_mode = config["model_architecture"]["policy_mode"]
-        if mode in {"frenet_pid", "frenet_pid_v2"}:
+        if mode in {"frenet_pid", "frenet_pid_v2", "frenet_pid_v3", "frenet_pid_v3_legacy"}:
             assert config["frenet"]["maximum_target_speed_mps"] == target_speed_mps, path
-            assert config["frenet"]["frenet_speed_delta_mps"] == frenet_speed_delta_mps, path
+            if mode not in {"frenet_pid_v3", "frenet_pid_v3_legacy"}:
+                assert config["frenet"]["frenet_speed_delta_mps"] == frenet_speed_delta_mps, path
         elif policy_mode == "bdp":
             assert config["frenet"]["maximum_target_speed_mps"] == target_speed_mps, path
 
@@ -293,7 +335,7 @@ def test_active_metadrive_frenet_jobs_use_route_continuous_sampler(bundle_root: 
         config = yaml.safe_load(path.read_text(encoding="utf-8"))
         mode = config["environment"]["trajectory_execution_mode"]
         policy_mode = config["model_architecture"]["policy_mode"]
-        uses_frenet_geometry = mode in {"frenet_pid", "frenet_pid_v2"} or (
+        uses_frenet_geometry = mode in {"frenet_pid", "frenet_pid_v2", "frenet_pid_v3", "frenet_pid_v3_legacy"} or (
             mode == "native_controller" and policy_mode == "bdp"
         )
         sampler = config["model_architecture"].get("candidate_sampler")

@@ -25,6 +25,11 @@ class CandidateGenerationConfig:
     maximum_target_speed_mps: float = 40.0
     lane_change_width_scale: float = 1.0
     speed_delta_mps: float = 5.0
+    include_curvature_candidates: bool = False
+    curvature_steering_fraction: float = 0.9
+    speed_command_time_s: float = 1.0
+    speed_delta_rate_mps2: float = 8.0
+    speed_action_scales: tuple[float, ...] = (-1.0, -0.5, 0.0, 0.5, 1.0)
 
     def __post_init__(self) -> None:
         if self.horizon_s <= 0.0:
@@ -33,6 +38,22 @@ class CandidateGenerationConfig:
             raise ValueError("sample_count must be at least 2")
         if self.position_scale_m <= 0.0 or self.speed_scale_mps <= 0.0:
             raise ValueError("feature scales must be positive")
+        if not isinstance(self.include_curvature_candidates, bool):
+            raise ValueError("include_curvature_candidates must be a boolean")
+        if not np.isfinite(self.curvature_steering_fraction) or not 0.0 < self.curvature_steering_fraction <= 1.0:
+            raise ValueError("curvature_steering_fraction must be finite and in (0, 1]")
+        if not np.isfinite([self.speed_command_time_s, self.speed_delta_rate_mps2]).all() or min(
+            self.speed_command_time_s, self.speed_delta_rate_mps2
+        ) <= 0:
+            raise ValueError("speed_command_time_s and speed_delta_rate_mps2 must be finite and positive")
+        scales = np.asarray(self.speed_action_scales, dtype=float)
+        if (scales.shape != (5,) or not np.isfinite(scales).all() or np.any(np.abs(scales) > 1)
+                or np.any(np.diff(scales) <= 0) or not np.any(scales == 0)):
+            raise ValueError("speed_action_scales must contain five increasing finite values in [-1,1], including zero")
+
+    def validate_v3(self) -> None:
+        if not np.isfinite(self.horizon_s) or self.horizon_s <= 0 or self.speed_command_time_s > self.horizon_s:
+            raise ValueError("v3 requires finite positive trajectory_horizon_s >= speed_command_time_s")
 
     @property
     def feature_dim(self) -> int:

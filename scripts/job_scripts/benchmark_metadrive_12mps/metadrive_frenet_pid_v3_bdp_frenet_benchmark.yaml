@@ -1,12 +1,13 @@
-# BDP-Frenet pair for metadrive_frenet_pid_v2_builtin_benchmark.yaml. Candidate
-# planning uses x_nominal while MetaDrive and PID execution use x_actual.
+# BDP-Frenet pair for metadrive_frenet_pid_v3_builtin_benchmark.yaml.
+# V3: 25 candidates with independent timed lateral quintic + ramp/cruise geometry.
+# Nominal XY/heading, actual initial speed; the speed column is desired V(t).
 runtime:
   run_mode: train
-  run_name: metadrive_frenet_pid_v2_bdp_frenet_curvature25_12mps_benchmark
+  run_name: metadrive_frenet_pid_v3_bdp_frenet_curvature25_12mps_benchmark
 environment:
   simulator: metadrive
   env_id: MetaDrive-v0
-  trajectory_execution_mode: frenet_pid_v2
+  trajectory_execution_mode: frenet_pid_v3
   environment_config:
     use_render: false
     out_of_route_done: true
@@ -34,9 +35,11 @@ frenet:
   trajectory_sample_count: 11
   position_feature_scale_m: 50.0
   speed_feature_scale_mps: 40.0
-  frenet_speed_delta_mps: 2.5
+  frenet_speed_command_time_s: 1.0
+  frenet_speed_delta_rate_mps2: 8.0
+  frenet_speed_action_scales: [-1, -0.5, 0, 0.5, 1]
   maximum_target_speed_mps: 12.0
-  frenet_include_curvature_candidates: true # 15 lane targets + 10 left/right curves sharing the five speeds.
+  frenet_include_curvature_candidates: true # 15 lane targets + 10 turns that become straight after speed-command tau.
   frenet_curvature_steering_fraction: 0.9 # Fraction of min(vehicle, PID) steering limit; not a tire-grip guarantee.
 pid:
   pid_controller_mode: adaptive_pursuit # Rear-axle pure pursuit plus persistent speed PI.
@@ -44,7 +47,7 @@ pid:
   pid_min_lookahead_m: 3.0
   pid_max_lookahead_m: 12.0
   pid_pursuit_gain: 1.0
-  pid_speed_preview_s: 0.4 # Read desired speed this far ahead in trajectory time.
+  pid_speed_preview_s: 0.4 # ACTIVE: PI previews desired V(t_projected + 0.4); no direct terminal override.
   pid_lookahead_points: 2
   pid_steering_error_mode: lateral_only
   pid_integral_reset_on_reference_change: false

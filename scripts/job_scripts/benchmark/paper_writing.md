@@ -69,3 +69,57 @@ This behavior does not establish a hidden configured speed limit. Any comparison
 - [`numpy_expert.py`](../../../../metadrive/metadrive/examples/ppo_expert/numpy_expert.py)
 - [`_evaluate_expert.py`](../../../../metadrive/metadrive/examples/ppo_expert/_evaluate_expert.py)
 - [`remove_useless_state.py`](../../../../metadrive/metadrive/examples/ppo_expert/remove_useless_state.py)
+
+## Tracking, Tire Slip, and the 12 m/s Experiment
+
+The adopted vehicle executes front-wheel steering and throttle/brake through
+Bullet physics. Continuous and discrete native inputs share the same normalized
+[-1, 1] limits, steering-angle limit, and brake-force mapping. The 25-action grid
+already contains full braking. Its coarser control resolution must not be
+reported as a weaker physical brake or steering bound.
+
+The inspected vehicle execution path has no explicit fixed physical yaw-rate
+clamp. There is a clipped yaw-rate magnitude in `StateObservation`; that is an
+observation normalization, not a dynamics constraint. Steering imposes an
+approximate curvature bound. Even with admissible steering, lateral tire slip
+and steering/vehicle transients can prevent exact trajectory tracking at high
+speed. In the kinematic approximation, required lateral acceleration is
+`a_lat = v^2 * curvature`; steering margin alone does not guarantee tire grip.
+
+Our adopted 275-dimensional observation does not explicitly supply ego lateral
+velocity, sideslip angle, or tire-slip state. The unchanged reward has no
+dedicated slip penalty: it rewards road progress and normalized speed, with
+destination, collision and road-departure outcomes. Road-relative pose, speed,
+heading changes and surrounding geometry provide indirect feedback, so it would
+be incorrect to claim that slip is entirely unobservable or unpenalized. This is
+a limitation of the observation/reward contract used in these experiments, not a
+claim that all MetaDrive observation classes or configurable rewards lack these
+signals. Tracking error alone does not prove that slip caused a failed episode;
+confirming that cause requires measured lateral velocity/sideslip diagnostics.
+
+Recommended wording:
+
+> High-speed tracking is affected by actuator limits and tire dynamics, while
+> the adopted observation and reward provide no explicit sideslip supervision.
+> We therefore include a 12 m/s stability experiment to reduce lateral dynamic
+> demand without adding slip observations or modifying the reward formulation.
+> Lower tracking error or higher navigation performance is an experimental
+> hypothesis, not guaranteed by the speed ceiling.
+
+Use [the 12 m/s bundle](../benchmark_metadrive_12mps/config_contract.md) as the
+recommended next stability experiment; retain this 80 km/h bundle as a separate
+reference. Native continuous and categorical policies are unchanged in actuator
+authority. All seven 12 m/s jobs share an ego engine-force cutoff of 43.2 km/h;
+NPC settings remain unchanged. The speed ceiling is not an instantaneous
+velocity clamp, and MetaDrive normalizes observed speed and the speed reward by
+that ceiling, so comparisons across ceilings must acknowledge this scaling.
+
+The four 12 m/s Frenet-PID jobs now additionally opt into two constant-curvature
+families crossed with the five speed levels (25 actions total). These use 0.9
+of the smaller vehicle/PID steering-angle limit. Thus the default 12 m/s bundle
+is a speed-and-candidate-coverage experiment, not a speed-only ablation against
+the 15-action 80 km/h Frenet jobs. Disable
+`frenet_include_curvature_candidates` to isolate the speed effect. Compare BDP
+and builtin PPO within each matching execution mode and bundle. Extra extreme
+curves do not by themselves guarantee lane keeping, and a 0.9 steering fraction
+does not guarantee that all curves can be followed at 12 m/s.

@@ -25,6 +25,8 @@ class CandidateSet:
     mask: np.ndarray
     trajectories: np.ndarray
     features: np.ndarray
+    # Optional direct controller setpoints; None selects speed from the sampled reference.
+    speed_targets: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         labels = np.asarray(self.labels)
@@ -40,6 +42,10 @@ class CandidateSet:
             and features.shape[0] == candidate_count
         ):
             raise ValueError("CandidateSet arrays must share the same candidate axis")
+        if self.speed_targets is not None:
+            targets = np.asarray(self.speed_targets)
+            if targets.shape != (candidate_count,) or not np.isfinite(targets).all() or np.any(targets < 0):
+                raise ValueError("speed_targets must be a finite non-negative [K] vector")
 
 
 @dataclass(frozen=True)

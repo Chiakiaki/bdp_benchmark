@@ -7,7 +7,10 @@ import numpy as np
 from bdp_benchmark.common.candidates import CandidateGenerationConfig
 from bdp_benchmark.common.contracts import CandidateSet, EgoState
 from bdp_benchmark.common.features import encode_ego_local_features
-from bdp_benchmark.common.frenet import FrenetState, ReferencePath, frenet_to_world, generate_frenet_trajectories
+from bdp_benchmark.common.frenet import (
+    FrenetState, ReferencePath, frenet_to_world, generate_frenet_trajectories,
+    generate_constant_curvature_trajectories,
+)
 from bdp_benchmark.metadrive.route_reference import (
     RoutePosition,
     build_route_reference,
@@ -19,6 +22,7 @@ from bdp_benchmark.metadrive.route_reference import (
 FRENET_PID_LATERAL_DIM = 3
 FRENET_PID_SPEED_DIM = 5
 FRENET_PID_ACTION_COUNT = FRENET_PID_LATERAL_DIM * FRENET_PID_SPEED_DIM
+FRENET_PID_CURVATURE_ACTION_COUNT = FRENET_PID_ACTION_COUNT + 2 * FRENET_PID_SPEED_DIM
 FRENET_REFERENCE_MODES = ("lane_segment", "route_continuous")
 
 
@@ -81,12 +85,14 @@ class MetaDriveAdapter:
         config: CandidateGenerationConfig,
         *,
         reference_mode: str = "lane_segment",
+        max_steering_rad: float | None = None,
     ) -> None:
         if reference_mode not in FRENET_REFERENCE_MODES:
             raise ValueError(f"reference_mode must be one of {FRENET_REFERENCE_MODES}, got {reference_mode!r}")
         self.env = env
         self.config = config
         self.reference_mode = reference_mode
+        self.max_steering_rad = max_steering_rad
         self._route_lane_cache_key = None
         self._route_lane_cache: tuple | None = None
 
@@ -216,6 +222,12 @@ class MetaDriveAdapter:
         execution_mode: str,
         planning_state: EgoState | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
+        if execution_mode in ("frenet_pid_v3", "frenet_pid_v3_legacy"):
+            origin = self._v3_origin(planning_state)
+            _, position, _, xy, _ = self._route_state(origin)
+            centers = self._frenet_pid_lane_centers(xy, lane=position.lane)
+            targets = self._v3_speed_profile(origin.speed).targets
+            return np.tile(centers, len(targets)), np.repeat(targets, len(centers))
         if self.reference_mode == "route_continuous":
             _route_lanes, route_position, state, position, speed = self._route_state(planning_state)
             return self._targets_from_state(
@@ -290,6 +302,12 @@ class MetaDriveAdapter:
         execution_mode: str,
         planning_state: EgoState | None = None,
     ) -> CandidateSet:
+        if execution_mode == "frenet_pid_v3":
+            return self._build_v3_candidates(planning_state)
+        if execution_mode == "frenet_pid_v3_legacy":
+            return self._build_v3_legacy_candidates(planning_state)
+        if self.config.include_curvature_candidates and execution_mode == "native_controller":
+            raise ValueError("curvature candidates require MetaDrive Frenet-PID execution")
         route_lanes = None
         route_position = None
         if self.reference_mode == "route_continuous":
@@ -332,6 +350,15 @@ class MetaDriveAdapter:
             lateral_speed=frenet[..., 3],
             initial_heading_rad=np.asarray(feature_origin.heading),
         )
+        if self.config.include_curvature_candidates:
+            # Keep the original 15 labels; append a left/right pair for each speed.
+            speeds = np.repeat(target_speed.reshape(FRENET_PID_SPEED_DIM, FRENET_PID_LATERAL_DIM)[:, 0], 2)
+            center_curvature = self._center_curvature()
+            curves = generate_constant_curvature_trajectories(
+                feature_origin, speeds, np.tile([center_curvature, -center_curvature], FRENET_PID_SPEED_DIM),
+                horizon_s=self.config.horizon_s, sample_count=self.config.sample_count,
+            )
+            world = np.concatenate([world, curves], axis=0)
         features = encode_ego_local_features(
             world,
             ego_xy=feature_origin.xy,
@@ -347,3 +374,102 @@ class MetaDriveAdapter:
             trajectories=world.astype(np.float32),
             features=features,
         )
+
+    def _center_curvature(self) -> float:
+        vehicle_limit = np.deg2rad(float(self.vehicle.max_steering))
+        limit = vehicle_limit if self.max_steering_rad is None else min(vehicle_limit, self.max_steering_rad)
+        wheelbase = float(self.vehicle.FRONT_WHEELBASE + self.vehicle.REAR_WHEELBASE)
+        rear_offset = float(self.vehicle.REAR_WHEELBASE)
+        if not np.isfinite([limit, wheelbase, rear_offset]).all() or not (
+            0 < limit < np.pi / 2 and wheelbase > 0 and rear_offset >= 0
+        ):
+            raise ValueError("curvature candidates require valid vehicle geometry and steering limits")
+        rear_curvature = np.tan(self.config.curvature_steering_fraction * limit) / wheelbase
+        return float(rear_curvature / np.hypot(1.0, rear_offset * rear_curvature))
+
+    def _v3_origin(self, planning_state: EgoState | None) -> EgoState:
+        actual = self.ego_state()
+        pose = actual if planning_state is None else planning_state
+        return EgoState(pose.x, pose.y, pose.heading, actual.speed)
+
+    def _v3_speed_profile(self, actual_speed: float):
+        from bdp_benchmark.common.retiming import speed_command_profile
+
+        self.config.validate_v3()
+        return speed_command_profile(
+            actual_speed, np.asarray(self.config.speed_action_scales), tau=self.config.speed_command_time_s,
+            rate=self.config.speed_delta_rate_mps2, minimum_speed=self.config.minimum_target_speed_mps,
+            maximum_speed=self.config.maximum_target_speed_mps, horizon_s=self.config.horizon_s,
+            sample_count=self.config.sample_count,
+        )
+
+    def _build_v3_legacy_candidates(self, planning_state: EgoState | None) -> CandidateSet:
+        from bdp_benchmark.common.retiming import (
+            lane_geometry_required_length, retimed_lane_trajectories, retimed_circular_trajectories,
+        )
+
+        origin = self._v3_origin(planning_state)
+        profile = self._v3_speed_profile(origin.speed)
+        lanes, position, _, xy, _ = self._route_state(origin)
+        centers = self._frenet_pid_lane_centers(xy, lane=position.lane)
+        width = float(position.lane.width_at(position.start_longitudinal))
+        # A positive spatial lane-change shape is needed even when accelerating from rest.
+        shape_length = max(origin.speed * self.config.horizon_s, 2 * width)
+        required = lane_geometry_required_length(shape_length, float(profile.distance.max()))
+        point_count = max(128, self.config.sample_count * 12)
+        reference = build_route_reference(
+            lanes, planning_xy=xy, required_length=required, point_count=point_count, route_position=position,
+        ).reference
+        world, _frenet = retimed_lane_trajectories(
+            reference, origin, initial_d=position.start_lateral, lane_targets=centers,
+            initial_reference_heading=position.start_heading, shape_length=shape_length,
+            profile=profile, geometry_sample_count=point_count,
+        )
+        targets = np.repeat(profile.targets, len(centers))
+        if self.config.include_curvature_candidates:
+            curvature = self._center_curvature()
+            curves = retimed_circular_trajectories(origin, profile, np.array([curvature, -curvature]))
+            world = np.concatenate((world, curves))
+            targets = np.concatenate((targets, np.repeat(profile.targets, 2)))
+        features = encode_ego_local_features(
+            world, ego_xy=origin.xy, ego_heading=origin.heading, position_scale_m=self.config.position_scale_m,
+            speed_scale_mps=self.config.speed_scale_mps, lateral_normal_sign=reference.lateral_normal_sign,
+        )
+        count = int(self.env.action_space.n)
+        return CandidateSet(np.arange(count), np.ones(count, dtype=np.float32), world.astype(np.float32),
+                            features, speed_targets=targets)
+
+    def _build_v3_candidates(self, planning_state: EgoState | None) -> CandidateSet:
+        from dataclasses import replace
+        from bdp_benchmark.common.independent_frenet import independent_frenet_motion, independent_frenet_to_world
+        from bdp_benchmark.common.retiming import turn_then_straight_trajectories
+
+        origin = self._v3_origin(planning_state)
+        profile = self._v3_speed_profile(origin.speed)
+        lanes, position, initial, xy, _ = self._route_state(origin)
+        # Preserve the initial nominal direction, including backward-facing poses.
+        initial = replace(initial, s_dot=origin.speed * np.cos(origin.heading - position.start_heading))
+        centers = self._frenet_pid_lane_centers(xy, lane=position.lane)
+        frenet = independent_frenet_motion(
+            initial, centers, profile, tau=self.config.speed_command_time_s, horizon_s=self.config.horizon_s,
+        )
+        reference = build_route_reference(
+            lanes, planning_xy=xy, required_length=max(float(np.max(frenet[..., 0])) + 1, 1),
+            point_count=max(64, self.config.sample_count * 6), route_position=position,
+        ).reference
+        world = independent_frenet_to_world(
+            reference, origin, frenet, profile, initial_reference_heading=position.start_heading,
+        )
+        if self.config.include_curvature_candidates:
+            curvature = self._center_curvature()
+            curves = turn_then_straight_trajectories(
+                origin, profile, np.array([curvature, -curvature]), turn_duration_s=self.config.speed_command_time_s,
+            )
+            world = np.concatenate((world, curves))
+        features = encode_ego_local_features(
+            world, ego_xy=origin.xy, ego_heading=origin.heading, position_scale_m=self.config.position_scale_m,
+            speed_scale_mps=self.config.speed_scale_mps, lateral_normal_sign=reference.lateral_normal_sign,
+        )
+        count = int(self.env.action_space.n)
+        # No direct target metadata: the PID must preview the desired-speed column.
+        return CandidateSet(np.arange(count), np.ones(count, dtype=np.float32), world.astype(np.float32), features)

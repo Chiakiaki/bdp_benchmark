@@ -73,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--trajectory_execution_mode",
-        choices=("native_controller", "frenet_pid", "frenet_pid_v2"),
+        choices=("native_controller", "frenet_pid", "frenet_pid_v2", "frenet_pid_v3", "frenet_pid_v3_legacy"),
         default="native_controller",
     )
     parser.add_argument(
@@ -92,6 +92,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--maximum_target_speed_mps", type=float, default=40.0)
     parser.add_argument("--frenet_lane_change_width_scale", type=float, default=1.0)
     parser.add_argument("--frenet_speed_delta_mps", type=float, default=5.0)
+    parser.add_argument("--frenet_speed_command_time_s", type=float, default=1.0,
+                        help="V3 speed ramp duration tau, separate from PID steering lookahead.")
+    parser.add_argument("--frenet_speed_delta_rate_mps2", type=float, default=8.0,
+                        help="V3 speed-target offset rate: delta_v = tau * rate * action_scale.")
+    parser.add_argument("--frenet_speed_action_scales", type=float, nargs="+", default=[-1, -.5, 0, .5, 1],
+                        help="V3 five increasing longitudinal command scales in [-1,1], including zero.")
+    parser.add_argument(
+        "--frenet_include_curvature_candidates", action=argparse.BooleanOptionalAction, default=False,
+        help="MetaDrive Frenet-PID only: append two curvature families times five speeds (15 -> 25 actions).",
+    )
+    parser.add_argument(
+        "--frenet_curvature_steering_fraction", type=float, default=0.9,
+        help="Fraction of min(vehicle, PID) steering-angle limit for the extra curves; must be in (0, 1].",
+    )
     parser.add_argument("--pid_lookahead_points", type=int, default=2)
     parser.add_argument("--pid_controller_mode", choices=("legacy", "adaptive_pursuit"), default="legacy")
     parser.add_argument("--pid_lookahead_time_s", type=float, default=0.5)
@@ -150,6 +164,12 @@ def _load_yaml_defaults(parser: argparse.ArgumentParser, config_path: Path) -> N
 
 
 def validate_args(args: argparse.Namespace) -> argparse.Namespace:
+    from .env_factory import generation_config_from_args
+
+    if args.frenet_include_curvature_candidates and (
+        args.simulator != "metadrive" or args.trajectory_execution_mode == "native_controller"
+    ):
+        raise ValueError("curvature candidates require MetaDrive Frenet-PID execution")
     if args.pid_controller_mode != "legacy":
         if args.simulator != "metadrive":
             raise ValueError("adaptive pursuit is currently wired only for MetaDrive")
@@ -166,6 +186,11 @@ def validate_args(args: argparse.Namespace) -> argparse.Namespace:
         raise ValueError("minimum_target_speed_mps must be non-negative")
     if args.maximum_target_speed_mps <= args.minimum_target_speed_mps:
         raise ValueError("maximum_target_speed_mps must exceed minimum_target_speed_mps")
+    generation = generation_config_from_args(args)
+    if args.trajectory_execution_mode in ("frenet_pid_v3", "frenet_pid_v3_legacy"):
+        if args.simulator != "metadrive":
+            raise ValueError(f"{args.trajectory_execution_mode} is currently supported only for MetaDrive")
+        generation.validate_v3()
     if args.pid_steering_error_mode not in STEERING_ERROR_MODES:
         raise ValueError(
             f"pid_steering_error_mode must be one of {STEERING_ERROR_MODES}, got {args.pid_steering_error_mode!r}"
@@ -233,11 +258,13 @@ def validate_args(args: argparse.Namespace) -> argparse.Namespace:
             "native_controller": {"one_hot", "native_action_frenet", "frenet_route_continuous"},
             "frenet_pid": {"one_hot", "frenet", "frenet_route_continuous"},
             "frenet_pid_v2": {"one_hot", "frenet", "frenet_route_continuous"},
+            "frenet_pid_v3": {"one_hot", "frenet", "frenet_route_continuous"},
+            "frenet_pid_v3_legacy": {"one_hot", "frenet", "frenet_route_continuous"},
         }[args.trajectory_execution_mode]
         if args.candidate_sampler not in allowed:
             required = (
                 "candidate_sampler=frenet or frenet_route_continuous"
-                if args.trajectory_execution_mode in ("frenet_pid", "frenet_pid_v2")
+                if args.trajectory_execution_mode in ("frenet_pid", "frenet_pid_v2", "frenet_pid_v3", "frenet_pid_v3_legacy")
                 else "one_hot, native_action_frenet, or frenet_route_continuous"
             )
             raise ValueError(
@@ -327,6 +354,11 @@ def resolved_config(args: argparse.Namespace) -> dict[str, Any]:
             "maximum_target_speed_mps": args.maximum_target_speed_mps,
             "frenet_lane_change_width_scale": args.frenet_lane_change_width_scale,
             "frenet_speed_delta_mps": args.frenet_speed_delta_mps,
+            "frenet_speed_command_time_s": args.frenet_speed_command_time_s,
+            "frenet_speed_delta_rate_mps2": args.frenet_speed_delta_rate_mps2,
+            "frenet_speed_action_scales": list(args.frenet_speed_action_scales),
+            "frenet_include_curvature_candidates": args.frenet_include_curvature_candidates,
+            "frenet_curvature_steering_fraction": args.frenet_curvature_steering_fraction,
         },
         "pid": {
             key: getattr(args, key)

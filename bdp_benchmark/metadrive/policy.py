@@ -8,17 +8,19 @@ from metadrive.policy.base_policy import BasePolicy
 
 from bdp_benchmark.common.contracts import EgoState
 from bdp_benchmark.common.tracking import TrackerConfig, TrajectoryPIDTracker
-from bdp_benchmark.metadrive.adapter import FRENET_PID_ACTION_COUNT
+from bdp_benchmark.metadrive.adapter import FRENET_PID_ACTION_COUNT, FRENET_PID_CURVATURE_ACTION_COUNT
 
 
 class MetaDriveFrenetPIDPolicy(BasePolicy):
+    ACTION_COUNT = FRENET_PID_ACTION_COUNT
+
     def __init__(self, control_object, random_seed=None, config=None):
         super().__init__(control_object, random_seed, config)
         self.tracker = TrajectoryPIDTracker(TrackerConfig())
 
     @classmethod
     def get_input_space(cls):
-        return spaces.Discrete(FRENET_PID_ACTION_COUNT)
+        return spaces.Discrete(cls.ACTION_COUNT)
 
     def configure_tracker(self, config: TrackerConfig, *, sample_dt: float = 0.2) -> None:
         vehicle = self.control_object
@@ -28,8 +30,8 @@ class MetaDriveFrenetPIDPolicy(BasePolicy):
             sample_dt=sample_dt,
         )
 
-    def set_reference(self, trajectory: np.ndarray) -> None:
-        self.tracker.set_reference(trajectory)
+    def set_reference(self, trajectory: np.ndarray, *, speed_target_mps: float | None = None) -> None:
+        self.tracker.set_reference(trajectory, speed_target_mps=speed_target_mps)
 
     def reset(self):
         super().reset()
@@ -60,3 +62,9 @@ class MetaDriveFrenetPIDPolicy(BasePolicy):
         action = [float(steering), float(np.clip(throttle, -1.0, 1.0))]
         self.action_info["action"] = action
         return action
+
+
+class MetaDriveCurvatureFrenetPIDPolicy(MetaDriveFrenetPIDPolicy):
+    """Same tracker, with ten optional curvature actions in its input contract."""
+
+    ACTION_COUNT = FRENET_PID_CURVATURE_ACTION_COUNT

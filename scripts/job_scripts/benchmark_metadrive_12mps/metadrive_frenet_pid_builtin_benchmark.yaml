@@ -2,7 +2,7 @@
 # three adaptive lane-center targets by five target-speed offsets.
 runtime:
   run_mode: train
-  run_name: metadrive_frenet_pid_builtin_12mps_benchmark
+  run_name: metadrive_frenet_pid_builtin_curvature25_12mps_benchmark
 environment:
   simulator: metadrive
   env_id: MetaDrive-v0
@@ -36,6 +36,8 @@ frenet:
   speed_feature_scale_mps: 40.0
   frenet_speed_delta_mps: 2.5
   maximum_target_speed_mps: 12.0
+  frenet_include_curvature_candidates: true # 15 lane targets + 10 left/right curves sharing the five speeds.
+  frenet_curvature_steering_fraction: 0.9 # Fraction of min(vehicle, PID) steering limit; not a tire-grip guarantee.
 pid:
   pid_controller_mode: adaptive_pursuit # Rear-axle pure pursuit plus persistent speed PI.
   pid_lookahead_time_s: 0.7 # Lookahead grows with actual vehicle speed.

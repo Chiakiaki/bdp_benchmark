@@ -100,6 +100,7 @@ class TrajectoryPIDTracker:
         self._last_speed = None
         self.last_diagnostics: dict[str, float] = {}
         self.reference: np.ndarray | None = None
+        self.speed_target_mps: float | None = None
         self.last_target_index: int | None = None
         self.last_target_point: np.ndarray | None = None
         self._steering_pid = _PID(config.heading_kp, config.heading_ki, config.heading_kd)
@@ -109,18 +110,22 @@ class TrajectoryPIDTracker:
         self._last_speed = None
         self.last_diagnostics = {}
         self.reference = None
+        self.speed_target_mps = None
         self.last_target_index = None
         self.last_target_point = None
         self._steering_pid.reset()
         self._speed_pid.reset()
 
-    def set_reference(self, trajectory: np.ndarray) -> None:
+    def set_reference(self, trajectory: np.ndarray, *, speed_target_mps: float | None = None) -> None:
         reference = np.asarray(trajectory, dtype=np.float64)
         if reference.ndim != 2 or reference.shape[1] != 4 or reference.shape[0] < 2:
             raise ValueError(f"trajectory reference must have shape [H,4] with H >= 2, got {reference.shape}")
         if self.config.controller_mode == "adaptive_pursuit" and not np.isfinite(reference).all():
             raise ValueError("adaptive pursuit requires finite trajectory samples")
+        if speed_target_mps is not None and (not np.isfinite(speed_target_mps) or speed_target_mps < 0):
+            raise ValueError("speed_target_mps must be finite and non-negative")
         self.reference = reference.copy()
+        self.speed_target_mps = speed_target_mps
         self.last_target_index = None
         self.last_target_point = None
         if self.config.controller_mode == "adaptive_pursuit":
@@ -180,10 +185,12 @@ class TrajectoryPIDTracker:
         self.last_target_index = index
         self.last_target_point = target[:2].copy()
 
-        s, _, arc = project_trajectory(self.reference, ego.xy)
-        times = np.arange(len(self.reference)) * self.sample_dt
-        target_time = np.interp(s, arc, times) + self.config.speed_preview_s
-        speed_target = np.interp(target_time, times, self.reference[:, 3])
+        speed_target = self.speed_target_mps
+        if speed_target is None:
+            s, _, arc = project_trajectory(self.reference, ego.xy)
+            times = np.arange(len(self.reference)) * self.sample_dt
+            target_time = np.interp(s, arc, times) + self.config.speed_preview_s
+            speed_target = np.interp(target_time, times, self.reference[:, 3])
         error = float(speed_target - ego.speed)
         # Differentiate measurement, avoiding kicks when the selected speed changes.
         derivative = 0.0 if self._last_speed is None else -(ego.speed - self._last_speed) / dt
@@ -235,8 +242,9 @@ class TrajectoryPIDTracker:
             -self.config.max_steering_rad,
             self.config.max_steering_rad,
         )
+        speed_target = target[3] if self.speed_target_mps is None else self.speed_target_mps
         acceleration = np.clip(
-            self._speed_pid.step(float(target[3] - ego.speed), dt),
+            self._speed_pid.step(float(speed_target - ego.speed), dt),
             -self.config.max_decel_mps2,
             self.config.max_accel_mps2,
         )

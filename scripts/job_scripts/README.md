@@ -72,6 +72,23 @@ Launch its matched comparisons with:
 ./scripts/job_scripts/benchmark_metadrive_12mps/run_metadrive_builtin_comparison.sh
 ```
 
+The v3 BDP/builtin pairs now live alongside their respective speed bundles and
+both use 25 candidates. Train each pair sequentially with:
+
+```bash
+./scripts/job_scripts/benchmark/run_metadrive_frenet_pid_v3_comparison.sh
+./scripts/job_scripts/benchmark_metadrive_12mps/run_metadrive_frenet_pid_v3_comparison.sh
+```
+
+V3 retains the shared state/reward/vehicle settings within each bundle but uses
+independent longitudinal ramp and lateral quintic geometry with desired-speed
+preview. The former distance-retimed/direct-target mode is now `frenet_pid_v3_legacy`,
+with matching legacy YAML copies in both bundles. Archived configs naming v3
+need `--trajectory_execution_mode frenet_pid_v3_legacy` to preserve old behavior.
+The old delta-speed descriptions above are for v1/v2. For visual transfer of BDP dot/MLP checkpoints from another candidate
+count, add `--allow_bdp_candidate_count_change`; state and per-candidate feature
+spaces must still match. See [the v3 contract](../../docs/frenet_pid_v3.md).
+
 The mixed-road HighwayEnv comparison uses:
 
 ```text
