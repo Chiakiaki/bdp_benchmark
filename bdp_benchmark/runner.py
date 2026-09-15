@@ -87,7 +87,17 @@ def run_training(args) -> Path:
     eval_env = None
     if int(args.eval_freq) > 0:
         eval_env = make_vector_env(args, log_dir=log_dir, is_train=False)
-    train_sb3_model(args, env, log_dir, model_dir, eval_env=eval_env, close_env=True)
+    tracking_callback = None
+    if args.tracking_diagnostics:
+        from .tracking_callback import TrackingCallback
+
+        tracking_callback = TrackingCallback(log_dir / "diagnostics" / "tracking_rollouts.csv")
+    try:
+        train_sb3_model(args, env, log_dir, model_dir, eval_env=eval_env, close_env=True,
+                        extra_callback=tracking_callback)
+    finally:
+        if tracking_callback is not None:
+            tracking_callback.close()
     return log_dir
 
 

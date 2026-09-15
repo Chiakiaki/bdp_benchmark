@@ -2,7 +2,9 @@
 
 This bundle is a controlled speed-cap ablation of `scripts/job_scripts/benchmark`. It retains the same maps, traffic, 275-dimensional observation, termination behavior, PPO settings, candidate layouts, policy architectures, PID configuration, seeds, and training budget.
 
-Only speed-related settings and run names differ.
+Both bundles use the same tuned `adaptive_pursuit` controller configuration.
+The controller experiment and parameter rationale are documented in
+[adaptive pursuit tracking](../../../docs/adaptive_pursuit_tracking.md).
 
 Like the main benchmark bundle, every job that constructs Frenet geometry uses `candidate_sampler: frenet_route_continuous`. The 12 m/s bundle therefore differs from the main bundle in speed settings, not route-reference correctness.
 

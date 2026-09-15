@@ -199,10 +199,12 @@ def test_active_metadrive_job_scripts_use_expert_nearby_vehicle_observation() ->
     assert metadrive_jobs
 
 
-def test_active_metadrive_frenet_pid_jobs_match_visual_check_pid_configuration() -> None:
+def test_active_metadrive_frenet_pid_jobs_share_adaptive_pursuit_configuration() -> None:
     reference = yaml.safe_load(
-        (METADRIVE_BENCHMARK_JOB_ROOT / "metadrive_frenet_pid_v2_bdp_frenet_lateral_only_visual_check.yaml").read_text(encoding="utf-8")
+        (METADRIVE_BENCHMARK_JOB_ROOT / "metadrive_frenet_pid_v2_bdp_frenet_benchmark.yaml").read_text(encoding="utf-8")
     )["pid"]
+    assert reference["pid_controller_mode"] == "adaptive_pursuit"
+
     jobs = []
     for bundle_root in (METADRIVE_BENCHMARK_JOB_ROOT, METADRIVE_12MPS_JOB_ROOT):
         for path in bundle_root.glob("metadrive_*_benchmark.yaml"):

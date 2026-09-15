@@ -30,6 +30,7 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
         env_config: dict[str, Any] | None = None,
         render_mode: str | None = None,
         reference_mode: str = "lane_segment",
+        tracking_diagnostics: bool = False,
     ) -> None:
         if execution_mode not in ("native_controller", "frenet_pid", "frenet_pid_v2"):
             raise ValueError(f"Unsupported MetaDrive execution mode: {execution_mode}")
@@ -68,6 +69,7 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
         self.execution_mode = execution_mode
         self.adapter = MetaDriveAdapter(self.env, generation_config, reference_mode=reference_mode)
         self.tracker_config = tracker_config
+        self.tracking_diagnostics = tracking_diagnostics
         self._latest_candidates: CandidateSet | None = None
         self._visualizer = None
         self._nominal_state = NominalTrajectoryState() if execution_mode == "frenet_pid_v2" else None
@@ -93,10 +95,10 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
             count = int(self.env.num_scenarios)
             kwargs["seed"] = start + (int(kwargs["seed"]) - start) % count
         result = self.env.reset(**kwargs)
-        if self.execution_mode == "frenet_pid":
-            self._pid_policy().configure_tracker(self.tracker_config)
-        elif self.execution_mode == "frenet_pid_v2":
-            self._pid_policy().configure_tracker(self.tracker_config)
+        if self.execution_mode in ("frenet_pid", "frenet_pid_v2"):
+            self._pid_policy().configure_tracker(
+                self.tracker_config, sample_dt=self.adapter.config.horizon_s / (self.adapter.config.sample_count - 1)
+            )
         if self._nominal_state is not None:
             self._nominal_state.planning_state(self.adapter.ego_state())
         if self._visualizer is not None:
@@ -148,7 +150,16 @@ class MetaDriveBenchmarkEnv(gym.Wrapper):
                 self._nominal_state.commit(candidate_set.trajectories[action_idx])
             self._pid_policy().set_reference(candidate_set.trajectories[action_idx])
         self._latest_candidates = None
-        return self.env.step(action_idx)
+        observation, reward, terminated, truncated, info = self.env.step(action_idx)
+        if self.tracking_diagnostics and self.execution_mode in ("frenet_pid", "frenet_pid_v2"):
+            from bdp_benchmark.tracking_diagnostics import tracking_errors
+
+            errors = tracking_errors(candidate_set.trajectories[action_idx], self.adapter.ego_state())
+            errors["steering_saturated"] = float(abs(self.env.agent.steering) >= 0.99)
+            errors["throttle_saturated"] = float(abs(self.env.agent.throttle_brake) >= 0.99)
+            errors.update(self._pid_policy().tracker.last_diagnostics)
+            info["tracking"] = errors
+        return observation, reward, terminated, truncated, info
 
     def close(self):
         if self._visualizer is not None:

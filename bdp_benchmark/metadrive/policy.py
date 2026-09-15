@@ -20,8 +20,13 @@ class MetaDriveFrenetPIDPolicy(BasePolicy):
     def get_input_space(cls):
         return spaces.Discrete(FRENET_PID_ACTION_COUNT)
 
-    def configure_tracker(self, config: TrackerConfig) -> None:
-        self.tracker = TrajectoryPIDTracker(config)
+    def configure_tracker(self, config: TrackerConfig, *, sample_dt: float = 0.2) -> None:
+        vehicle = self.control_object
+        self.tracker = TrajectoryPIDTracker(
+            config, wheelbase=vehicle.FRONT_WHEELBASE + vehicle.REAR_WHEELBASE,
+            rear_axle_offset=vehicle.REAR_WHEELBASE,
+            sample_dt=sample_dt,
+        )
 
     def set_reference(self, trajectory: np.ndarray) -> None:
         self.tracker.set_reference(trajectory)
@@ -43,6 +48,8 @@ class MetaDriveFrenetPIDPolicy(BasePolicy):
             speed=float(vehicle.speed),
         )
         dt = float(self.engine.global_config["physics_world_step_size"])
+        if self.tracker.config.controller_mode != "legacy":
+            dt *= int(self.engine.global_config["decision_repeat"])
         control = self.tracker.step(ego, dt=dt)
         max_steering_degrees = max(float(vehicle.max_steering), 1e-6)
         steering = np.clip(np.rad2deg(control.steering_rad) / max_steering_degrees, -1.0, 1.0)

@@ -45,6 +45,11 @@ directories together, or add their common parent to `PYTHONPATH`:
 
 ## Experiment Matrix
 
+The 80 km/h MetaDrive Frenet jobs now use `pid_controller_mode: adaptive_pursuit`,
+an interpolated pure pursuit controller with persistent speed PI feedback.
+See [controller measurements and reproduction](docs/adaptive_pursuit_tracking.md)
+for the nominal/actual error diagnostics, tuning results, and the two training queues.
+
 Each simulator supports the six base controlled comparisons, plus an opt-in
 nominal-planning v2 variant:
 

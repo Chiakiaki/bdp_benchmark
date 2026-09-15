@@ -2,7 +2,7 @@
 # lane-center by target-speed Frenet trajectories as frenet_pid.
 runtime:
   run_mode: train
-  run_name: metadrive_frenet_pid_v2_builtin_benchmark
+  run_name: metadrive_frenet_pid_v2_builtin_adaptive_pursuit_benchmark
 environment:
   simulator: metadrive
   env_id: MetaDrive-v0
@@ -37,6 +37,12 @@ frenet:
   frenet_speed_delta_mps: 5.0
   maximum_target_speed_mps: 22.222222
 pid:
+  pid_controller_mode: adaptive_pursuit # Rear-axle pure pursuit plus persistent speed PI.
+  pid_lookahead_time_s: 0.7 # Lookahead grows with actual vehicle speed.
+  pid_min_lookahead_m: 3.0
+  pid_max_lookahead_m: 12.0
+  pid_pursuit_gain: 1.0
+  pid_speed_preview_s: 0.4 # Read desired speed this far ahead in trajectory time.
   pid_lookahead_points: 2
   pid_steering_error_mode: lateral_only
   pid_integral_reset_on_reference_change: false
@@ -44,8 +50,8 @@ pid:
   pid_heading_ki: 0.0
   pid_heading_kd: 0.08
   pid_cross_track_kp: 0.35
-  pid_speed_kp: 1.0
-  pid_speed_ki: 0.05
+  pid_speed_kp: 2.0
+  pid_speed_ki: 0.2
   pid_speed_kd: 0.0
   pid_max_steering_rad: 0.7
   pid_max_accel_mps2: 5.0
@@ -73,6 +79,7 @@ model_architecture:
   policy_layers: [256, 256]
   value_layers: [256, 256]
 logging:
+  tracking_diagnostics: true # Rollout means only; no per-step sample retention.
   log_path: logs/benchmark
   log_interval: 1
   save_freq: 200000

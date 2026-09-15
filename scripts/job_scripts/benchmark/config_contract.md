@@ -165,26 +165,27 @@ The paper's main single-agent PPO benchmark uses continuous normalized steering 
 
 ## Frenet PID Contract
 
-The four active `frenet_pid` and `frenet_pid_v2` jobs use the same tracker configuration as the lateral-only visual-check job:
+The four active `frenet_pid` and `frenet_pid_v2` training jobs use the tuned adaptive pursuit tracker:
 
 ```yaml
 pid:
-  pid_lookahead_points: 2
-  pid_steering_error_mode: lateral_only
-  pid_integral_reset_on_reference_change: false
-  pid_heading_kp: 1.2
-  pid_heading_ki: 0.0
-  pid_heading_kd: 0.08
-  pid_cross_track_kp: 0.35
-  pid_speed_kp: 1.0
-  pid_speed_ki: 0.05
+  pid_controller_mode: adaptive_pursuit
+  pid_lookahead_time_s: 0.7
+  pid_min_lookahead_m: 3.0
+  pid_max_lookahead_m: 12.0
+  pid_pursuit_gain: 1.0
+  pid_speed_preview_s: 0.4
+  pid_speed_kp: 2.0
+  pid_speed_ki: 0.2
   pid_speed_kd: 0.0
   pid_max_steering_rad: 0.7
   pid_max_accel_mps2: 5.0
   pid_max_decel_mps2: 8.0
 ```
 
-`lateral_only` derives steering correction from cross-track error without directly adding the candidate heading error. Preserving the steering integral across reference replacement avoids discarding accumulated lateral correction at every policy decision. Episode reset still clears all PID state.
+Adaptive pursuit uses an interpolated metric lookahead and rear-axle bicycle geometry. Speed PI state persists across replans, with saturation protection and the correct 0.10-second MetaDrive policy interval. `tracking_diagnostics: true` records rollout mean errors in TensorBoard and `diagnostics/tracking_rollouts.csv`; it changes neither observation nor reward. Legacy steering fields retained in the YAML are inactive in this mode. The lateral-only visual preset remains a legacy controller reference.
+
+See [controller measurements and reproduction](../../../docs/adaptive_pursuit_tracking.md) for the experiments and parameter semantics. The 12 m/s bundle retains its earlier legacy tracker and is no longer a speed-only ablation of these newly tuned 80 km/h jobs.
 
 Native-controller jobs do not use this PID block.
 

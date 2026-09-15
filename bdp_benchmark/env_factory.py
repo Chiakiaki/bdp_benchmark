@@ -35,6 +35,12 @@ def generation_config_from_args(args) -> CandidateGenerationConfig:
 def tracker_config_from_args(args) -> TrackerConfig:
     return TrackerConfig(
         lookahead_points=int(args.pid_lookahead_points),
+        controller_mode=args.pid_controller_mode,
+        lookahead_time_s=args.pid_lookahead_time_s,
+        min_lookahead_m=args.pid_min_lookahead_m,
+        max_lookahead_m=args.pid_max_lookahead_m,
+        pursuit_gain=args.pid_pursuit_gain,
+        speed_preview_s=args.pid_speed_preview_s,
         steering_error_mode=str(args.pid_steering_error_mode),
         integral_reset_on_reference_change=args.pid_integral_reset_on_reference_change,
         heading_kp=float(args.pid_heading_kp),
@@ -85,6 +91,7 @@ def make_raw_benchmark_env(args, *, env_id: str | None = None, render_mode: str 
             env_config=args.environment_config,
             render_mode=render_mode,
             reference_mode=reference_mode,
+            tracking_diagnostics=args.tracking_diagnostics,
         )
     raise ValueError(f"Unsupported simulator: {args.simulator}")
 

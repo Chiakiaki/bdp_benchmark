@@ -93,6 +93,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--frenet_lane_change_width_scale", type=float, default=1.0)
     parser.add_argument("--frenet_speed_delta_mps", type=float, default=5.0)
     parser.add_argument("--pid_lookahead_points", type=int, default=2)
+    parser.add_argument("--pid_controller_mode", choices=("legacy", "adaptive_pursuit"), default="legacy")
+    parser.add_argument("--pid_lookahead_time_s", type=float, default=0.5)
+    parser.add_argument("--pid_min_lookahead_m", type=float, default=2.0)
+    parser.add_argument("--pid_max_lookahead_m", type=float, default=12.0)
+    parser.add_argument("--pid_pursuit_gain", type=float, default=1.0)
+    parser.add_argument("--pid_speed_preview_s", type=float, default=0.4)
     parser.add_argument(
         "--pid_steering_error_mode",
         choices=STEERING_ERROR_MODES,
@@ -117,6 +123,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pid_max_decel_mps2", type=float, default=8.0)
     parser.add_argument("--evaluate_episodes", type=int, default=10)
     parser.add_argument("--model_path", type=str, default=None)
+    parser.add_argument("--tracking_diagnostics", action=argparse.BooleanOptionalAction, default=False,
+                        help="Record Frenet tracking errors in rollout logs without altering observations or rewards.")
     parser.set_defaults(
         sb3_algorithm="PPO",
         policy_mode="builtin",
@@ -142,6 +150,12 @@ def _load_yaml_defaults(parser: argparse.ArgumentParser, config_path: Path) -> N
 
 
 def validate_args(args: argparse.Namespace) -> argparse.Namespace:
+    if args.pid_controller_mode != "legacy":
+        if args.simulator != "metadrive":
+            raise ValueError("adaptive pursuit is currently wired only for MetaDrive")
+        from .env_factory import tracker_config_from_args
+
+        tracker_config_from_args(args)
     if args.trajectory_horizon_s <= 0.0:
         raise ValueError("trajectory_horizon_s must be positive")
     if args.trajectory_sample_count < 2:
@@ -288,6 +302,7 @@ def _option_in_args(args: Sequence[str], option: str) -> bool:
 def resolved_config(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "runtime": {
+            "tracking_diagnostics": args.tracking_diagnostics,
             "run_mode": args.run_mode,
             "run_name": args.run_name,
             "visual_check": args.visual_check,
@@ -317,6 +332,12 @@ def resolved_config(args: argparse.Namespace) -> dict[str, Any]:
             key: getattr(args, key)
             for key in (
                 "pid_lookahead_points",
+                "pid_controller_mode",
+                "pid_lookahead_time_s",
+                "pid_min_lookahead_m",
+                "pid_max_lookahead_m",
+                "pid_pursuit_gain",
+                "pid_speed_preview_s",
                 "pid_steering_error_mode",
                 "pid_integral_reset_on_reference_change",
                 "pid_heading_kp",
