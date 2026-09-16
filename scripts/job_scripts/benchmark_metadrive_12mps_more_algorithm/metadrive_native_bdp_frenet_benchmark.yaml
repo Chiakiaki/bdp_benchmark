@@ -1,0 +1,78 @@
+# TRPOBDP_native at 12 m/s (43.2 km/h). Source: ../benchmark_metadrive_12mps/metadrive_native_bdp_frenet_benchmark.yaml
+# Environment, observation, reward, candidates, controller and network are unchanged.
+# TRPO learning_rate is critic-only; target_kl constrains the actor update.
+runtime:
+  run_mode: train
+  run_name: metadrive_native_trpobdp_frenet_12mps_benchmark
+environment:
+  simulator: metadrive
+  env_id: MetaDrive-v0
+  trajectory_execution_mode: native_controller
+  environment_config:
+    use_render: false
+    out_of_route_done: true
+    on_continuous_line_done: false
+    vehicle_config:
+      lidar:
+        num_others: 4
+    agent_configs:
+      default_agent:
+        use_special_color: true
+        spawn_lane_index:
+        - '>'
+        - '>>'
+        - 0
+        max_speed_km_h: 43.2
+    map: 3
+    traffic_density: 0.1
+    random_traffic: false
+    num_scenarios: 1000
+    start_seed: 5000
+    store_map: false
+    horizon: 1000
+    physics_world_step_size: 0.02
+    decision_repeat: 5
+    log_level: 50
+frenet:
+  trajectory_horizon_s: 2.0
+  trajectory_sample_count: 11
+  native_lateral_span_m: 3.5
+  native_speed_span_mps: 5.0
+  maximum_target_speed_mps: 12.0
+  position_feature_scale_m: 50.0
+  speed_feature_scale_mps: 40.0
+algorithm:
+  name: TRPO
+  num_timesteps: 2000000
+  learning_rate: 5.0e-05
+  schedule: fixed
+  trpo_timesteps_per_batch: 1000
+  batch_size: 100
+  gamma: 0.99
+  gae_lambda: 0.95
+  target_kl: 0.01
+  cg_max_steps: 10
+  cg_damping: 0.01
+  n_critic_updates: 20
+  sub_sampling_factor: 1
+  n_envs: 8
+  vec_env: subproc
+  seed: 41
+  device: auto
+model_architecture:
+  policy_mode: bdp
+  builtin_policy: MlpPolicy
+  candidate_sampler: frenet_route_continuous
+  candidate_scorer: dot
+  policy_layers:
+  - 256
+  - 256
+  value_layers:
+  - 256
+  - 256
+logging:
+  log_path: logs/benchmark
+  log_interval: 1
+  save_freq: 200000
+  eval_freq: 0
+  monitor_mode: env

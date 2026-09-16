@@ -14,6 +14,7 @@ import yaml
 
 from bdp_benchmark.common.tracking import STEERING_ERROR_MODES
 from critic_based_rl.args import add_sb3_bdp_args
+from critic_based_rl.config_io import algorithm_specific_config
 
 
 HIGHWAY_MIXED_OBSERVATION_CONFIG = {
@@ -410,7 +411,7 @@ def resolved_config(args: argparse.Namespace) -> dict[str, Any]:
                 "n_envs",
                 "vec_env",
             )
-        },
+        } | algorithm_specific_config(args),
         "model_architecture": {
             key: getattr(args, key)
             for key in (

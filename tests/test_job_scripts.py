@@ -14,16 +14,20 @@ METADRIVE_12MPS_JOB_ROOT = JOB_ROOT / "benchmark_metadrive_12mps"
 
 def test_curvature_candidates_opt_in_in_12mps_jobs_and_80kmh_v3_pair():
     enabled = []
+    extra_bundles = (JOB_ROOT / "benchmark_more_algorithm",
+                     JOB_ROOT / "benchmark_metadrive_12mps_more_algorithm")
     for path in JOB_ROOT.rglob("*.yaml"):
         config = yaml.safe_load(path.read_text())
         if config.get("frenet", {}).get("frenet_include_curvature_candidates", False):
             enabled.append(path)
-            assert path.parent in (METADRIVE_12MPS_JOB_ROOT, METADRIVE_BENCHMARK_JOB_ROOT)
+            assert path.parent in (METADRIVE_12MPS_JOB_ROOT, METADRIVE_BENCHMARK_JOB_ROOT, *extra_bundles)
+            if path.parent in extra_bundles:
+                assert config["environment"]["trajectory_execution_mode"] == "frenet_pid_v3"
             if path.parent == METADRIVE_BENCHMARK_JOB_ROOT:
                 assert config["environment"]["trajectory_execution_mode"] in ("frenet_pid_v3", "frenet_pid_v3_legacy")
             assert config["environment"]["trajectory_execution_mode"] in ("frenet_pid", "frenet_pid_v2", "frenet_pid_v3", "frenet_pid_v3_legacy")
             assert config["frenet"]["frenet_curvature_steering_fraction"] == 0.9
-    assert len(enabled) == 12
+    assert len(enabled) == 20
     for mode in ("frenet_pid", "frenet_pid_v2", "frenet_pid_v3", "frenet_pid_v3_legacy"):
         a = yaml.safe_load((METADRIVE_12MPS_JOB_ROOT / f"metadrive_{mode}_builtin_benchmark.yaml").read_text())
         b = yaml.safe_load((METADRIVE_12MPS_JOB_ROOT / f"metadrive_{mode}_bdp_frenet_benchmark.yaml").read_text())

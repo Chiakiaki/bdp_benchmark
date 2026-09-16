@@ -45,6 +45,16 @@ directories together, or add their common parent to `PYTHONPATH`:
 
 ## Experiment Matrix
 
+Additional MetaDrive algorithm comparisons are grouped in
+[`benchmark_more_algorithm`](scripts/job_scripts/benchmark_more_algorithm/README.md)
+(80 km/h) and
+[`benchmark_metadrive_12mps_more_algorithm`](scripts/job_scripts/benchmark_metadrive_12mps_more_algorithm/README.md)
+(12 m/s). Each retains five TRPO comparisons and adds builtin DQN/A2C for
+native discrete controls and Frenet-PID-v3. Algorithms and their parsing are
+owned by `critic_based_rl`; simulator observations and rewards are unchanged.
+Each bundle contains `run_metadrive_more_algorithm_comparison.sh` for all nine
+jobs and `run_metadrive_trpo_comparison.sh` for only its five TRPO jobs.
+
 The 80 km/h MetaDrive Frenet jobs now use `pid_controller_mode: adaptive_pursuit`,
 an interpolated pure pursuit controller with persistent speed PI feedback.
 See [controller measurements and reproduction](docs/adaptive_pursuit_tracking.md)

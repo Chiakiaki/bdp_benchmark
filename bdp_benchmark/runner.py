@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from critic_based_rl.model import get_algorithm_class
+from critic_based_rl.model import get_algorithm_class, validate_algorithm_policy
 from critic_based_rl.runner_core import train_sb3_model
 from critic_based_rl.inference import predict_discrete_with_scores
 from critic_based_rl.checkpoint_compat import load_sb3_model_allow_bdp_candidate_count_change
@@ -134,6 +134,7 @@ def collect_evaluation_returns(
 
 
 def _load_evaluation_model(args, env):
+    validate_algorithm_policy(args)
     if bool(getattr(args, "allow_bdp_candidate_count_change", False)):
         return load_sb3_model_allow_bdp_candidate_count_change(args, env, args.model_path)
     return get_algorithm_class(args.sb3_algorithm).load(args.model_path, env=env, device=args.device)
