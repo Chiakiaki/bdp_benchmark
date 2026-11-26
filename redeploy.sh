@@ -28,11 +28,13 @@ PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
 CUDA_INDEX="${CUDA_INDEX:-https://download.pytorch.org/whl/cu128}"
 TORCH_VERSION="${TORCH_VERSION:-2.11.0}"
 MINICONDA_URL="${MINICONDA_URL:-https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh}"
-REPOS="${REPOS:-HighwayEnv metadrive bdp_benchmark critic_based_rl}"
+# machine_mgr_repo is tooling: cloned, never pip-installed.
+REPOS="${REPOS:-HighwayEnv metadrive bdp_benchmark critic_based_rl machine_mgr_repo}"
 STATE_FILE="$PROJECT_ROOT/.redeploy-state.yaml"
 
 # Repos that are pip-installed editable (critic_based_rl is import path only).
 PIP_REPOS="${PIP_REPOS:-HighwayEnv metadrive bdp_benchmark}"
+TOOLING_REPOS="${TOOLING_REPOS:-machine_mgr_repo}"
 # Fast suite that needs no display; override with REDEPLOY_TESTS.
 TEST_TARGETS="${REDEPLOY_TESTS:-tests/test_config.py tests/test_frenet.py tests/test_candidates.py tests/test_job_scripts.py tests/test_highway_adapter.py}"
 
@@ -75,6 +77,7 @@ declare -A REPO_URLS=(
   [bdp_benchmark]="https://github.com/Chiakiaki/bdp_benchmark.git"
   # private: needs a forwarded key or a deploy key on the target
   [critic_based_rl]="git@github.com:Chiakiaki/critic_based_rl.git"
+  [machine_mgr_repo]="https://github.com/Chiakiaki/machine_mgr_repo.git"
 )
 
 # ── checks ──────────────────────────────────────────────────────────────────
@@ -165,6 +168,28 @@ if torch.cuda.is_available():
 import highway_env, metadrive  # noqa: F401
 print(f"  {'highway envs':24s} {[e for e in gym.registry if 'highway' in e][:2]}")
 PYCODE
+  verify_tooling
+}
+
+verify_tooling() {
+  # machine_mgr_repo is plain Python (stdlib + optional PyYAML): cloned, never
+  # pip-installed. It only has to be present and able to self-diagnose.
+  local tool="$PROJECT_ROOT/machine_mgr_repo/machine_mgr"
+  if [ ! -d "$PROJECT_ROOT/machine_mgr_repo" ]; then
+    warn "machine_mgr_repo absent (tooling only; --fetch git clones it)"
+    return 0
+  fi
+  [ -x "$tool" ] || chmod +x "$tool" 2>/dev/null
+  if [ -x "$tool" ]; then
+    printf '  ok   %-10s %s\n' tooling "$PROJECT_ROOT/machine_mgr_repo"
+    if "$tool" doctor >/dev/null 2>&1; then
+      printf '  ok   %-10s doctor clean\n' machine_mgr
+    else
+      warn "machine_mgr doctor reported missing prerequisites (run: $tool doctor)"
+    fi
+  else
+    warn "machine_mgr is not executable: $tool"
+  fi
 }
 
 run_tests() {
