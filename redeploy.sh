@@ -11,6 +11,7 @@
 #   ./redeploy.sh --test              # verify + fast unit-test subset
 #   ./redeploy.sh --fetch git         # clone missing sibling repos from GitHub
 #   ./redeploy.sh --force             # re-run the pip layer even if up to date
+#   ./redeploy.sh --refresh-state     # rewrite .redeploy-state.yaml only
 #
 # Layout (project root = parent of this repo; the four dirs stay siblings):
 #   $PROJECT_ROOT/
@@ -51,6 +52,7 @@ while [ $# -gt 0 ]; do
     --verify) MODE=verify; shift ;;
     --test) DO_TEST=1; shift ;;
     --force) FORCE=1; shift ;;
+    --refresh-state) MODE=refresh-state; shift ;;
     --fetch) FETCH="${2:-none}"; shift 2 ;;
     --project-root) PROJECT_ROOT="${2:?}"; STATE_FILE="$PROJECT_ROOT/.redeploy-state.yaml"; shift 2 ;;
     --env) ENV_NAME="${2:?}"; ENV_DIR="$CONDA_DIR/envs/$ENV_NAME"; PY="$ENV_DIR/bin/python"; PIP="$ENV_DIR/bin/pip"; shift 2 ;;
@@ -174,7 +176,8 @@ run_tests() {
 write_state() {
   local head=""
   for repo in $REPOS; do
-    [ -d "$(repo_path "$repo")/.git" ] && head="$head$(printf '  %s: %s\n' "$repo" "$(git -C "$(repo_path "$repo")" rev-parse HEAD 2>/dev/null)")"
+    [ -d "$(repo_path "$repo")/.git" ] && \
+      head="$head$(printf '  %s: %s' "$repo" "$(git -C "$(repo_path "$repo")" rev-parse HEAD 2>/dev/null)")"$'\n' 
   done
   {
     echo "# written by redeploy.sh — informational, safe to delete"
@@ -185,12 +188,17 @@ write_state() {
     echo "python: $PYTHON_VERSION"
     echo "torch: $TORCH_VERSION+cu128"
     echo "conda: $CONDA_DIR"
-    printf 'repos:\n%s' "$head"
+    printf 'repos:\n%s\n' "$head"
   } > "$STATE_FILE"
   printf '  ok   %-10s %s\n' state "$STATE_FILE"
 }
 
 # ── verify-only path ────────────────────────────────────────────────────────
+
+if [ "$MODE" = refresh-state ]; then
+  write_state
+  exit 0
+fi
 
 if [ "$MODE" = verify ]; then
   verify
