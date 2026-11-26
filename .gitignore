@@ -7,3 +7,6 @@ logs/
 dist/
 build/
 *.egg-info/
+
+# machine_mgr run state (per-run command snapshots, logs, pids)
+.machine_mgr/

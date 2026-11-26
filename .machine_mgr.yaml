@@ -1,0 +1,46 @@
+# machine_mgr job descriptor — values only.
+#
+# This file says HOW to submit bdp_benchmark jobs on a machine. It does not
+# contain job definitions: the 60+ reproducible jobs stay in
+# scripts/job_scripts/**/*.yaml and remain the single source of truth for
+# parameters (seeds, budgets, env config). Nothing here duplicates them.
+#
+# Schema: machine_mgr_repo/docs/job-contract.md (contract version 1).
+
+version: 1
+name: bdp_benchmark
+
+git:
+  require_match: true          # refuse submit when local HEAD != target HEAD
+
+env:
+  name: bdp
+  bootstrap: ./redeploy.sh
+  verify: "./redeploy.sh --verify"
+
+runner:
+  workdir: "."
+  # conda run keeps this working in a non-interactive ssh shell (no `conda activate`)
+  command: '"$HOME/miniconda3/bin/conda" run --no-capture-output -n {env_name} python3 scripts/train.py --config {job}'
+  env:
+    PYTHONPATH: "{project_root}"
+
+jobs:
+  discover:
+    - "scripts/job_scripts/**/*.yaml"
+  exclude:
+    - "**/*visual_check*.yaml"
+  groups:
+    - {title: "ICRA 2027 PPO vs TRPO", glob: "scripts/job_scripts/icra2027_trpo_vs_ppo_12mps/*.yaml"}
+    - {title: "MetaDrive 12 m/s", glob: "scripts/job_scripts/benchmark_metadrive_12mps/*.yaml"}
+    - {title: "MetaDrive 80 km/h", glob: "scripts/job_scripts/benchmark/*.yaml"}
+    - {title: "HighwayEnv", glob: "scripts/job_scripts/highway_*.yaml"}
+
+artifacts:
+  logs:
+    paths: ["logs/benchmark", "logs/smoke"]
+    kind: dir
+
+limits:
+  max_parallel: 1
+  min_free_gpu_mem_gb: 2
