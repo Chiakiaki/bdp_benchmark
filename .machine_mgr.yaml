@@ -42,5 +42,6 @@ artifacts:
     kind: dir
 
 limits:
-  max_parallel: 1
-  min_free_gpu_mem_gb: 2
+  max_parallel: 1          # one MetaDrive job at a time
+  min_free_gpu_mem_gb: 2   # refuse to start when the GPU is already busy
+  min_free_ram_gb: 6       # 8 subproc workers use ~5 GB; keeps a 14 GB host out of swap
