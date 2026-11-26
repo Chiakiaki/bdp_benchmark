@@ -20,23 +20,36 @@ rules.
 
 The tested host stack uses Python 3.12, Gymnasium 1.2.x, Stable-Baselines3 2.8,
 and Torch 2.10. Install the local simulator checkouts and this package in
-editable mode:
+editable mode.
+
+The commands below assume a single **project root**: the directory that holds
+the four sibling repositories. Its absolute path depends on the machine, so it
+is never hard-coded here. Set it once per shell:
 
 ```bash
-cd /home/dell/project
+# Directory containing bdp_benchmark/, critic_based_rl/, HighwayEnv/, metadrive/
+export PROJECT_ROOT="${PROJECT_ROOT:-$HOME/project}"
+```
+
+The original development host used `/home/dell/project`; a current example is
+`/home/sry/project`. Any path works as long as the four directories stay
+siblings.
+
+```bash
+cd "$PROJECT_ROOT"
 
 python3 -m pip install --user --break-system-packages -e HighwayEnv
 python3 -m pip install --user --break-system-packages -e metadrive
 python3 -m pip install --user --break-system-packages -e bdp_benchmark
 
-export PYTHONPATH="/home/dell/project:${PYTHONPATH:-}"
+export PYTHONPATH="$PROJECT_ROOT:${PYTHONPATH:-}"
 ```
 
 `critic_based_rl` is imported from the common project root. Keep these sibling
 directories together, or add their common parent to `PYTHONPATH`:
 
 ```text
-/home/dell/project/
+$PROJECT_ROOT/
   bdp_benchmark/
   critic_based_rl/
   HighwayEnv/
@@ -54,6 +67,12 @@ native discrete controls and Frenet-PID-v3. Algorithms and their parsing are
 owned by `critic_based_rl`; simulator observations and rewards are unchanged.
 Each bundle contains `run_metadrive_more_algorithm_comparison.sh` for all nine
 jobs and `run_metadrive_trpo_comparison.sh` for only its five TRPO jobs.
+
+The ICRA 2027 PPO-vs-TRPO comparison is self-contained in
+[`icra2027_trpo_vs_ppo_12mps`](scripts/job_scripts/icra2027_trpo_vs_ppo_12mps/README.md):
+two BDP Frenet-PID-v3 arms at the 12 m/s cap that differ only in the RL
+algorithm (2M transitions, 8 workers, seed 41), plus `summarize_tail.py` for the
+fixed training-tail return reported in the paper.
 
 The 80 km/h MetaDrive Frenet jobs now use `pid_controller_mode: adaptive_pursuit`,
 an interpolated pure pursuit controller with persistent speed PI feedback.
@@ -110,8 +129,8 @@ extension described below increases both to 25 actions.
 Run from the benchmark directory:
 
 ```bash
-cd /home/dell/project/bdp_benchmark
-export PYTHONPATH="/home/dell/project:${PYTHONPATH:-}"
+cd "$PROJECT_ROOT/bdp_benchmark"
+export PYTHONPATH="$PROJECT_ROOT:${PYTHONPATH:-}"
 
 python3 scripts/train.py \
   --config scripts/job_scripts/highway_native_bdp_frenet_benchmark.yaml
@@ -440,8 +459,8 @@ the corresponding scenario dataset configuration.
 ## Tests
 
 ```bash
-cd /home/dell/project/bdp_benchmark
-export PYTHONPATH="/home/dell/project:${PYTHONPATH:-}"
+cd "$PROJECT_ROOT/bdp_benchmark"
+export PYTHONPATH="$PROJECT_ROOT:${PYTHONPATH:-}"
 python3 -m pytest -q
 ```
 
