@@ -35,6 +35,19 @@ The original development host used `/home/dell/project`; a current example is
 `/home/sry/project`. Any path works as long as the four directories stay
 siblings.
 
+For a hands-off install (Miniconda env, no sudo, CUDA-matched torch), run the
+bundled script instead of the pip commands below:
+
+```bash
+./redeploy.sh                 # install or repair the env
+./redeploy.sh --verify        # check only
+./redeploy.sh --test          # check + fast test subset
+./redeploy.sh --fetch git     # clone missing sibling repos from GitHub first
+```
+
+It writes `.redeploy-state.yaml` (versions, repo HEADs, GPU) for traceability and
+is safe to re-run.
+
 ```bash
 cd "$PROJECT_ROOT"
 
