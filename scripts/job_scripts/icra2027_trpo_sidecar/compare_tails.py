@@ -168,8 +168,13 @@ def main(argv: list[str] | None = None) -> int:
             run_dir = find_trpo_run(trpo_root, needle)
             if run_dir:
                 run_name = run_dir.name
-                t = window_stats(read_monitor_dir(run_dir),
-                                 args.window_start, args.window_end)
+                episodes = read_monitor_dir(run_dir)
+                t = window_stats(episodes, args.window_start, args.window_end)
+                # A cancelled run stops short of the window; its "tail" is not a
+                # tail. Mark it instead of reporting a meaningless mean.
+                if t["transitions"] < args.window_end:
+                    t = {"n": 0, "mean": math.nan, "sd": math.nan,
+                         "transitions": t["transitions"], "incomplete": True}
         rows.append({"ceiling": group, "method": label, "ppo": p, "trpo": t,
                      "trpo_run": run_name})
 
