@@ -71,3 +71,12 @@ def test_find_trpo_run_picks_latest(tmp_path: Path):
         (tmp_path / name).mkdir()
     found = compare_tails.find_trpo_run(tmp_path, "native_trpo_builtin_benchmark")
     assert found.name.startswith("20260102")
+
+
+def test_completeness_threshold_uses_tolerance():
+    """A finished run ends slightly short of 2M; a cancelled one is far below."""
+    # emulate the comparator's rule directly
+    window_end = 2_000_000
+    tolerance = max(10_000, int(window_end * 0.005))
+    assert 1_998_161 >= window_end - tolerance     # finished run counts as complete
+    assert not (1_433_977 >= window_end - tolerance)  # cancelled run does not

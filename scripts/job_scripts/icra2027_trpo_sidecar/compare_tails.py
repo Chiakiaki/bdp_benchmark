@@ -172,7 +172,11 @@ def main(argv: list[str] | None = None) -> int:
                 t = window_stats(episodes, args.window_start, args.window_end)
                 # A cancelled run stops short of the window; its "tail" is not a
                 # tail. Mark it instead of reporting a meaningless mean.
-                if t["transitions"] < args.window_end:
+                # Complete runs end a few thousand transitions short of the
+                # nominal budget (episodes complete, counters round), so allow a
+                # small tolerance; a cancelled run is far below it.
+                tolerance = max(10_000, int(args.window_end * 0.005))
+                if t["transitions"] < args.window_end - tolerance:
                     t = {"n": 0, "mean": math.nan, "sd": math.nan,
                          "transitions": t["transitions"], "incomplete": True}
         rows.append({"ceiling": group, "method": label, "ppo": p, "trpo": t,
